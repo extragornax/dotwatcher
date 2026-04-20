@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "WebFetch(domain:app.madcap.cc)"
+      "WebFetch(domain:app.madcap.cc)",
+      "Bash(cargo build *)"
     ]
   }
 }

@@ -42,6 +42,7 @@
   .fav-toggle.on { background: #3a2a0a; border-color: #5a3a0a; color: #f1c40f; }
   .fav-toggle:hover { color: #f1c40f; }
   .pmark.fav { box-shadow: 0 0 0 2px #f1c40f, 0 0 12px rgba(241,196,15,0.65); }
+  .cactus-mark { font-size: 26px; line-height: 1; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.9)); }
   #detail { padding: 18px 22px; overflow: auto; max-height: calc(100vh - 52px); }
   #detail h2 { margin: 0 0 6px; font-size: 20px; }
   #detail .tagline { color: var(--mute); margin: 0 0 18px; }
@@ -83,6 +84,11 @@
   #map { position: absolute; inset: 0; background: #111; }
   .map-overlay { position: absolute; top: 12px; left: 12px; z-index: 500; background: rgba(20, 24, 29, 0.88); backdrop-filter: blur(6px); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; color: var(--fg); font-size: 12px; display: flex; gap: 10px; align-items: center; max-width: calc(100vw - 24px); }
   .map-overlay input[type=search] { width: 200px; padding: 4px 8px; }
+  .map-overlay select { background: var(--panel-2); border: 1px solid var(--border); color: var(--fg); padding: 4px 6px; border-radius: 4px; font: inherit; font-size: 12px; }
+  .map-btn { background: var(--panel-2); border: 1px solid var(--border); color: var(--mute); padding: 4px 10px; border-radius: 4px; cursor: pointer; font: inherit; font-size: 12px; }
+  .map-btn:hover { color: var(--fg); }
+  .map-btn.on { background: #222a33; border-color: #3d444d; color: var(--fg); }
+  .map-btn.fav.on { background: #3a2a0a; border-color: #5a3a0a; color: #f1c40f; }
   .map-legend { position: absolute; bottom: 12px; left: 12px; z-index: 500; background: rgba(20, 24, 29, 0.88); backdrop-filter: blur(6px); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; color: var(--fg); font-size: 11px; line-height: 1.6; }
   .map-legend .row { display: flex; align-items: center; gap: 8px; }
   .map-legend .sw { width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.3); }
@@ -186,6 +192,9 @@
   <div id="map"></div>
   <div class="map-overlay">
     <input id="mapq" type="search" placeholder="jump to rider…" />
+    <select id="map-theme" title="map style"></select>
+    <button id="map-traces" class="map-btn on" type="button" title="toggle traces" aria-pressed="true">traces</button>
+    <button id="map-favonly" class="map-btn fav" type="button" title="favorites only" aria-pressed="false">★ only</button>
     <span id="mapcount" style="color: var(--mute)">—</span>
   </div>
   <div class="map-legend">
@@ -216,6 +225,49 @@
   let favs = loadFavs();
   let favOnly = false;
   let catFilter = null;
+
+  const MAP_THEMES = {
+    dark: {
+      label: 'Dark',
+      url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+      opts: { maxZoom: 19, subdomains: 'abcd', attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>' },
+    },
+    light: {
+      label: 'Light',
+      url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+      opts: { maxZoom: 19, subdomains: 'abcd', attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>' },
+    },
+    voyager: {
+      label: 'Voyager',
+      url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+      opts: { maxZoom: 19, subdomains: 'abcd', attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>' },
+    },
+    osm: {
+      label: 'OSM',
+      url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      opts: { maxZoom: 19, subdomains: 'abc', attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' },
+    },
+    satellite: {
+      label: 'Satellite',
+      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      opts: { maxZoom: 19, attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics' },
+    },
+    topo: {
+      label: 'Topo',
+      url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+      opts: { maxZoom: 17, subdomains: 'abc', attribution: 'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>, SRTM | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA)' },
+    },
+  };
+  const THEME_KEY = 'madcap_map_theme';
+  let mapTheme = localStorage.getItem(THEME_KEY) || 'dark';
+  if (!(mapTheme in MAP_THEMES)) mapTheme = 'dark';
+
+  const TRACES_KEY = 'madcap_map_traces';
+  let showTraces = localStorage.getItem(TRACES_KEY) !== '0';
+
+  let cactusPath = null;
+  let cactusMarker = null;
+  let cactusTimer = null;
   function loadFavs() {
     if (!favKey) return new Set();
     try { return new Set(JSON.parse(localStorage.getItem(favKey) || '[]')); }
@@ -230,6 +282,49 @@
     if (favs.has(id)) favs.delete(id); else favs.add(id);
     saveFavs();
     render();
+  }
+
+  function setFavOnly(v) {
+    favOnly = !!v;
+    ['favonly', 'map-favonly'].forEach(id => {
+      const b = document.getElementById(id);
+      if (b) { b.classList.toggle('on', favOnly); b.setAttribute('aria-pressed', favOnly); }
+    });
+    renderList();
+    if (map) renderMap();
+    writeUrlState();
+  }
+
+  function setShowTraces(v) {
+    showTraces = !!v;
+    localStorage.setItem(TRACES_KEY, showTraces ? '1' : '0');
+    const b = document.getElementById('map-traces');
+    if (b) { b.classList.toggle('on', showTraces); b.setAttribute('aria-pressed', showTraces); }
+    if (map) renderTraces();
+  }
+
+  function readUrlState() {
+    const params = new URLSearchParams(location.search);
+    return {
+      tab: params.get('tab') === 'map' ? 'map' : null,
+      pid: params.get('p') || null,
+      cat: params.get('cat') || null,
+      favOnly: params.get('fav') === '1',
+    };
+  }
+
+  function writeUrlState() {
+    if (mode !== 'event') return;
+    const params = new URLSearchParams();
+    if (currentTab === 'map') params.set('tab', 'map');
+    if (selected) params.set('p', selected.id);
+    if (catFilter) params.set('cat', catFilter);
+    if (favOnly) params.set('fav', '1');
+    const qs = params.toString();
+    const target = location.pathname + (qs ? '?' + qs : '');
+    if (location.pathname + location.search !== target) {
+      history.replaceState(null, '', target);
+    }
   }
 
   const fmtKm = (m) => (m == null ? '—' : (+m).toFixed(1) + ' km');
@@ -284,6 +379,7 @@
     if (selected) renderDetail(selected);
     else renderOverview();
     if (map) renderMap();
+    writeUrlState();
   }
 
   function rankColor(rank) {
@@ -303,18 +399,23 @@
   function ensureMap() {
     if (map) return;
     map = L.map('map', { preferCanvas: true, zoomControl: true, attributionControl: true }).setView([43, -1], 6);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      maxZoom: 19,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
-      subdomains: 'abcd',
-    }).addTo(map);
     mapLayers = {
+      tile: null,
       routes: L.layerGroup().addTo(map),
       cps: L.layerGroup().addTo(map),
+      traces: L.layerGroup().addTo(map),
       participants: L.layerGroup().addTo(map),
       participantMarkers: new Map(),
       didFit: false,
     };
+    applyMapTheme();
+  }
+
+  function applyMapTheme() {
+    if (!map || !mapLayers) return;
+    if (mapLayers.tile) mapLayers.tile.remove();
+    const t = MAP_THEMES[mapTheme];
+    mapLayers.tile = L.tileLayer(t.url, t.opts).addTo(map);
   }
 
   function renderMap() {
@@ -328,8 +429,9 @@
       if (typeof gj === 'string') {
         try { gj = JSON.parse(gj); } catch { continue; }
       }
+      const color = r.name === 'Cactus' ? '#e6d7b8' : (r.color || '#f78166');
       const layer = L.geoJSON(gj, {
-        style: { color: r.color || '#f78166', weight: 3, opacity: 0.85 },
+        style: { color, weight: 3, opacity: 0.85 },
       });
       layer.addTo(mapLayers.routes);
       try { allRouteBounds.push(layer.getBounds()); } catch {}
@@ -354,8 +456,9 @@
 
     // --- participants ---
     const partsById = new Map(state.participants.map(p => [p.id, p]));
+    const shownParts = favOnly ? state.participants.filter(p => favs.has(p.id)) : state.participants;
     const seen = new Set();
-    for (const p of state.participants) {
+    for (const p of shownParts) {
       const pt = lastPointOf(p.id);
       if (!pt) continue;
       seen.add(p.id);
@@ -384,7 +487,13 @@
         mapLayers.participantMarkers.delete(id);
       }
     }
-    document.getElementById('mapcount').textContent = `${seen.size} / ${state.participants.length} on map`;
+    document.getElementById('mapcount').textContent = favOnly
+      ? `${seen.size} favorites on map`
+      : `${seen.size} / ${state.participants.length} on map`;
+
+    renderTraces();
+    renderCactus();
+    if (!cactusTimer) cactusTimer = setInterval(renderCactus, 60000);
 
     // Fit once on first render.
     if (!mapLayers.didFit) {
@@ -401,6 +510,103 @@
         mapLayers.didFit = true;
       }
     }
+  }
+
+  function haversineKm(a, b) {
+    const R = 6371, toRad = Math.PI / 180;
+    const dLat = (b[0] - a[0]) * toRad;
+    const dLon = (b[1] - a[1]) * toRad;
+    const s = Math.sin(dLat/2)**2 + Math.cos(a[0]*toRad) * Math.cos(b[0]*toRad) * Math.sin(dLon/2)**2;
+    return 2 * R * Math.asin(Math.sqrt(s));
+  }
+
+  function computeCactusPath() {
+    if (cactusPath) return cactusPath;
+    if (!state || !state.info) return null;
+    const startMs = state.info.start_date ? new Date(state.info.start_date).getTime() : NaN;
+    const endMs = state.info.end_date ? new Date(state.info.end_date).getTime() : NaN;
+    if (!isFinite(startMs) || !isFinite(endMs) || endMs <= startMs) return null;
+    const route = ((state.geo && state.geo.routes) || []).find(r => r.name === 'Cactus');
+    if (!route) return null;
+    let gj = route.geojson;
+    if (typeof gj === 'string') { try { gj = JSON.parse(gj); } catch { return null; } }
+    const geom = gj && gj.geometry;
+    if (!geom || geom.type !== 'LineString' || !geom.coordinates || geom.coordinates.length < 2) return null;
+    const coords = geom.coordinates.map(c => [c[1], c[0]]);
+    const cum = [0];
+    for (let i = 1; i < coords.length; i++) cum.push(cum[i-1] + haversineKm(coords[i-1], coords[i]));
+    cactusPath = { coords, cum, total: cum[cum.length - 1], start: startMs, end: endMs };
+    return cactusPath;
+  }
+
+  function cactusPosition() {
+    const cp = computeCactusPath();
+    if (!cp) return null;
+    let f = (Date.now() - cp.start) / (cp.end - cp.start);
+    f = Math.max(0, Math.min(1, f));
+    const target = f * cp.total;
+    let lo = 0, hi = cp.cum.length - 1;
+    while (lo < hi - 1) {
+      const mid = (lo + hi) >> 1;
+      if (cp.cum[mid] <= target) lo = mid; else hi = mid;
+    }
+    const segLen = cp.cum[hi] - cp.cum[lo] || 1;
+    const segF = (target - cp.cum[lo]) / segLen;
+    const a = cp.coords[lo], b = cp.coords[hi];
+    return {
+      lat: a[0] + (b[0] - a[0]) * segF,
+      lng: a[1] + (b[1] - a[1]) * segF,
+      fraction: f,
+      distance: target,
+      total: cp.total,
+    };
+  }
+
+  function renderCactus() {
+    if (!map) return;
+    const pos = cactusPosition();
+    if (!pos) {
+      if (cactusMarker) { cactusMarker.remove(); cactusMarker = null; }
+      return;
+    }
+    const icon = L.divIcon({ className: '', html: '<div class="cactus-mark">🌵</div>', iconSize: [28, 28], iconAnchor: [14, 14] });
+    if (cactusMarker) {
+      cactusMarker.setLatLng([pos.lat, pos.lng]);
+      cactusMarker.setIcon(icon);
+    } else {
+      cactusMarker = L.marker([pos.lat, pos.lng], { icon, keyboard: false, zIndexOffset: 1000 });
+      cactusMarker.bindPopup(() => {
+        const p = cactusPosition() || pos;
+        return `<b>🌵 Cactus</b><br/><span style="color:var(--mute)">${(p.fraction*100).toFixed(1)}% of route · ${p.distance.toFixed(1)} / ${p.total.toFixed(0)} km</span>`;
+      });
+      cactusMarker.addTo(map);
+    }
+  }
+
+  function renderTraces() {
+    if (!mapLayers) return;
+    mapLayers.traces.clearLayers();
+    if (!showTraces) return;
+    const tracks = (state.tracks && state.tracks.tracks) || [];
+    const tracksById = new Map(tracks.map(t => [t.participant_id, t]));
+    const partsById = new Map(state.participants.map(p => [p.id, p]));
+
+    const drawTrace = (id, weight, opacity) => {
+      const t = tracksById.get(id);
+      if (!t || !t.track || t.track.length < 2) return;
+      const p = partsById.get(id);
+      L.polyline(t.track.map(pt => [pt[1], pt[2]]), {
+        color: rankColor(p && p.overall_rank),
+        weight,
+        opacity,
+      }).addTo(mapLayers.traces);
+    };
+
+    for (const id of favs) {
+      if (selected && id === selected.id) continue;
+      drawTrace(id, 2, 0.55);
+    }
+    if (selected) drawTrace(selected.id, 3.5, 0.95);
   }
 
   function participantPopup(p) {
@@ -451,9 +657,21 @@
       // Leaflet needs a size recalc after the container becomes visible.
       setTimeout(() => { map.invalidateSize(); renderMap(); }, 0);
     }
+    writeUrlState();
   }
 
   document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => setTab(t.dataset.tab)));
+
+  {
+    const sel = document.getElementById('map-theme');
+    sel.innerHTML = Object.entries(MAP_THEMES).map(([k, v]) =>
+      `<option value="${k}"${k === mapTheme ? ' selected' : ''}>${escape(v.label)}</option>`).join('');
+    sel.addEventListener('change', (ev) => {
+      mapTheme = ev.target.value;
+      localStorage.setItem(THEME_KEY, mapTheme);
+      applyMapTheme();
+    });
+  }
 
   document.getElementById('mapq').addEventListener('input', (ev) => {
     const q = ev.target.value.trim().toLowerCase();
@@ -636,14 +854,11 @@
     if (!b) return;
     catFilter = b.dataset.cat || null;
     renderList();
+    writeUrlState();
   });
-  document.getElementById('favonly').addEventListener('click', () => {
-    favOnly = !favOnly;
-    const b = document.getElementById('favonly');
-    b.classList.toggle('on', favOnly);
-    b.setAttribute('aria-pressed', favOnly);
-    renderList();
-  });
+  document.getElementById('favonly').addEventListener('click', () => setFavOnly(!favOnly));
+  document.getElementById('map-favonly').addEventListener('click', () => setFavOnly(!favOnly));
+  document.getElementById('map-traces').addEventListener('click', () => setShowTraces(!showTraces));
 
   // -------- home view ----------
   function parseISO(s) { if (!s) return null; const d = new Date(s); return isNaN(d) ? null : d; }
@@ -766,7 +981,21 @@
   } else {
     document.getElementById('header-context').innerHTML = `event <b>${escape(slug)}</b>`;
     showEventView();
+    const urlState = readUrlState();
+    catFilter = urlState.cat;
+    favOnly = urlState.favOnly;
+    ['favonly', 'map-favonly'].forEach(id => {
+      const b = document.getElementById(id);
+      if (b) { b.classList.toggle('on', favOnly); b.setAttribute('aria-pressed', favOnly); }
+    });
+    const tracesBtn = document.getElementById('map-traces');
+    if (tracesBtn) { tracesBtn.classList.toggle('on', showTraces); tracesBtn.setAttribute('aria-pressed', showTraces); }
     load().then(() => {
+      if (urlState.pid) {
+        const p = state.participants.find(x => x.id === urlState.pid);
+        if (p) { selected = p; render(); }
+      }
+      if (urlState.tab === 'map') setTab('map');
       refreshTimer = setInterval(load, 30000);
     }).catch(e => {
       document.getElementById('body').innerHTML = `<div class="err">${escape(e.message)}</div>`;

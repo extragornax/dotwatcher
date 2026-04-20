@@ -5,14 +5,19 @@ WORKDIR /app
 
 # Prime the dependency cache: build an empty crate with the real manifests first
 # so `cargo build --release` only rebuilds our source on subsequent edits.
+# `benches/merge_tracks.rs` only needs to exist for Cargo.toml to parse; the
+# stub stays in place since `cargo build` never compiles benches.
 COPY Cargo.toml Cargo.lock ./
-RUN mkdir -p src && echo 'fn main() {}' > src/main.rs && \
+RUN mkdir -p src benches && \
+    echo 'fn main() {}' > src/main.rs && \
+    : > src/lib.rs && \
+    echo 'fn main() {}' > benches/merge_tracks.rs && \
     cargo build --release && \
     rm -rf src target/release/madcap_fast target/release/deps/madcap_fast*
 
 COPY src ./src
-# Bust cargo's mtime-based cache so main.rs is recompiled.
-RUN touch src/main.rs && cargo build --release
+# Bust cargo's mtime-based cache so sources are recompiled.
+RUN touch src/main.rs src/lib.rs && cargo build --release
 
 
 FROM debian:bookworm-slim AS runtime

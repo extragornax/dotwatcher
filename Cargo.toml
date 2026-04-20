@@ -17,6 +17,13 @@ anyhow = "1"
 brotli = "7"
 bytes = "1"
 
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "merge_tracks"
+harness = false
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

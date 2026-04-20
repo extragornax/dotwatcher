@@ -6,6 +6,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
+use madcap_fast::merge_track_pages;
 use axum::{
     Router,
     extract::{Path, State},
@@ -139,39 +140,7 @@ async fn fetch_tracks_paginated(client: &Client, slug: &str) -> Result<Box<RawVa
         }
     }
 
-    // Merge: concatenate oldest page first so final track is time-ordered.
-    let mut merged: HashMap<String, Vec<Value>> = HashMap::new();
-    for page in pages.iter().rev() {
-        let Some(tracks) = page.get("tracks").and_then(|t| t.as_array()) else { continue };
-        for t in tracks {
-            let Some(pid) = t.get("participant_id").and_then(|p| p.as_str()) else { continue };
-            let Some(points) = t.get("track").and_then(|p| p.as_array()) else { continue };
-            merged
-                .entry(pid.to_string())
-                .or_default()
-                .extend(points.iter().cloned());
-        }
-    }
-
-    // Dedup overlapping page boundaries by first element (timestamp).
-    for track in merged.values_mut() {
-        track.sort_by(|a, b| {
-            let ta = a.get(0).and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let tb = b.get(0).and_then(|v| v.as_f64()).unwrap_or(0.0);
-            ta.partial_cmp(&tb).unwrap_or(std::cmp::Ordering::Equal)
-        });
-        track.dedup_by(|a, b| {
-            let ta = a.get(0).and_then(|v| v.as_f64());
-            let tb = b.get(0).and_then(|v| v.as_f64());
-            ta.is_some() && ta == tb
-        });
-    }
-
-    let tracks_array: Vec<Value> = merged
-        .into_iter()
-        .map(|(pid, track)| serde_json::json!({ "participant_id": pid, "track": track }))
-        .collect();
-    let payload = serde_json::json!({ "tracks": tracks_array });
+    let payload = merge_track_pages(&pages);
     let raw = RawValue::from_string(serde_json::to_string(&payload)?)?;
     Ok(raw)
 }

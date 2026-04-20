@@ -64,6 +64,8 @@
   input[type=search] { background: var(--panel-2); border: 1px solid var(--border); color: var(--fg); padding: 6px 10px; border-radius: 6px; width: 100%; font: inherit; }
   .searchbar { padding: 0 18px 10px; display: flex; gap: 6px; align-items: center; }
   .searchbar input[type=search] { flex: 1; }
+  .catbar { padding: 0 18px 10px; display: flex; gap: 4px; flex-wrap: wrap; }
+  .catbar .pill { font-size: 11px; padding: 3px 10px; }
   .err { color: var(--bad); padding: 14px; }
   a { color: var(--accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
@@ -168,6 +170,7 @@
 <section id="view-list" class="view active">
   <aside id="sidebar">
     <h2>Leaderboard</h2>
+    <div class="catbar" id="catbar"></div>
     <div class="searchbar">
       <input id="q" type="search" placeholder="search name / bib…" />
       <button id="favonly" class="fav-toggle" type="button" title="show favorites only" aria-pressed="false">★</button>
@@ -212,6 +215,7 @@
   const favKey = slug ? `madcap_fav:${slug}` : null;
   let favs = loadFavs();
   let favOnly = false;
+  let catFilter = null;
   function loadFavs() {
     if (!favKey) return new Set();
     try { return new Set(JSON.parse(localStorage.getItem(favKey) || '[]')); }
@@ -479,11 +483,13 @@
     const q = (document.getElementById('q').value || '').trim().toLowerCase();
     let list = state.participants.slice();
     if (favOnly) list = list.filter(p => favs.has(p.id));
+    if (catFilter) list = list.filter(p => (p.attributes && p.attributes.category) === catFilter);
+    const rankKey = catFilter ? 'rank' : 'overall_rank';
     list.sort((a, b) => {
       const fa = favs.has(a.id) ? 0 : 1;
       const fb = favs.has(b.id) ? 0 : 1;
       if (fa !== fb) return fa - fb;
-      return (a.overall_rank ?? 1e9) - (b.overall_rank ?? 1e9);
+      return (a[rankKey] ?? 1e9) - (b[rankKey] ?? 1e9);
     });
     if (!q) return list;
     return list.filter(p =>
@@ -494,7 +500,22 @@
     );
   }
 
+  function renderCategoryBar() {
+    const bar = document.getElementById('catbar');
+    if (!bar || !state) return;
+    const cats = [...new Set(state.participants
+      .map(p => (p.attributes && p.attributes.category) || '')
+      .filter(Boolean))].sort();
+    if (cats.length < 2) { bar.innerHTML = ''; return; }
+    const pills = [`<button class="pill${catFilter == null ? ' active' : ''}" data-cat="">All</button>`];
+    for (const c of cats) {
+      pills.push(`<button class="pill${catFilter === c ? ' active' : ''}" data-cat="${escape(c)}">${escape(c)}</button>`);
+    }
+    bar.innerHTML = pills.join('');
+  }
+
   function renderList() {
+    renderCategoryBar();
     const root = document.getElementById('plist');
     const list = filteredParticipants();
     const frag = document.createDocumentFragment();
@@ -505,8 +526,9 @@
       const nick = p.nickname ? ` “${p.nickname}”` : '';
       const dotClass = p.sleeping ? 'sleep' : (p.last_ping && (Date.now() - new Date(p.last_ping)) > 15 * 60000 ? 'stale' : 'ok');
       const isFav = favs.has(p.id);
+      const rankNum = catFilter ? p.rank : p.overall_rank;
       div.innerHTML = `
-        <div class="rank">#${p.overall_rank ?? '-'}</div>
+        <div class="rank">#${rankNum ?? '-'}</div>
         <div class="who">
           <div class="name"><span class="dot ${dotClass}"></span>${escape(p.first_name || '')} ${escape(p.last_name || '')}${escape(nick)}</div>
           <div class="meta">bib ${escape(p.bib || '-')} · ${escape((p.attributes && p.attributes.category) || '')} · ${sinceText(p.last_ping)}</div>
@@ -609,6 +631,12 @@
   }
 
   document.getElementById('q').addEventListener('input', () => renderList());
+  document.getElementById('catbar').addEventListener('click', (ev) => {
+    const b = ev.target.closest('.pill[data-cat]');
+    if (!b) return;
+    catFilter = b.dataset.cat || null;
+    renderList();
+  });
   document.getElementById('favonly').addEventListener('click', () => {
     favOnly = !favOnly;
     const b = document.getElementById('favonly');

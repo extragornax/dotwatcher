@@ -43,6 +43,12 @@
   .fav-toggle:hover { color: #f1c40f; }
   .pmark.fav { box-shadow: 0 0 0 2px #f1c40f, 0 0 12px rgba(241,196,15,0.65); }
   .cactus-mark { font-size: 26px; line-height: 1; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.9)); }
+  .plabel { display: inline-flex; align-items: center; gap: 5px; background: rgba(20,24,29,0.88); color: var(--fg); border: 1.5px solid rgba(255,255,255,0.85); border-radius: 12px; padding: 2px 8px 2px 4px; font-size: 11px; font-weight: 600; white-space: nowrap; box-shadow: 0 1px 3px rgba(0,0,0,0.6); line-height: 1; transition: transform .12s ease; }
+  .plabel .pdot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; border: 1px solid rgba(0,0,0,0.5); }
+  .plabel.selected { transform: scale(1.1); border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent), 0 0 10px var(--accent); }
+  .plabel.fav { box-shadow: 0 0 0 2px #f1c40f, 0 0 10px rgba(241,196,15,0.55); }
+  .plabel.sleep { opacity: 0.55; }
+  .plabel.stale { opacity: 0.4; border-style: dashed; }
   #detail { padding: 18px 22px; overflow: auto; max-height: calc(100vh - 52px); }
   #detail h2 { margin: 0 0 6px; font-size: 20px; }
   #detail .tagline { color: var(--mute); margin: 0 0 18px; }
@@ -193,6 +199,11 @@
   <div class="map-overlay">
     <input id="mapq" type="search" placeholder="jump to rider…" />
     <select id="map-theme" title="map style"></select>
+    <select id="map-labels" title="marker labels">
+      <option value="dot">dots</option>
+      <option value="bib">bibs</option>
+      <option value="name">names</option>
+    </select>
     <button id="map-traces" class="map-btn on" type="button" title="toggle traces" aria-pressed="true">traces</button>
     <button id="map-favonly" class="map-btn fav" type="button" title="favorites only" aria-pressed="false">★ only</button>
     <span id="mapcount" style="color: var(--mute)">—</span>
@@ -264,6 +275,11 @@
 
   const TRACES_KEY = 'madcap_map_traces';
   let showTraces = localStorage.getItem(TRACES_KEY) !== '0';
+
+  const LABELS_KEY = 'madcap_map_labels';
+  const VALID_LABELS = new Set(['dot', 'bib', 'name']);
+  let labelStyle = localStorage.getItem(LABELS_KEY);
+  if (!VALID_LABELS.has(labelStyle)) labelStyle = 'dot';
 
   let cactusPath = null;
   let cactusMarker = null;
@@ -466,9 +482,16 @@
       const isSelected = selected && selected.id === p.id;
       const color = rankColor(p.overall_rank);
       const stale = p.last_ping && (Date.now() - new Date(p.last_ping).getTime()) > 15 * 60000;
-      const cls = 'pmark' + (isSelected ? ' selected' : '') + (favs.has(p.id) ? ' fav' : '') + (p.sleeping ? ' sleep' : '') + (stale ? ' stale' : '');
-      const html = `<div class="${cls}" style="background:${color}"></div>`;
-      const icon = L.divIcon({ className: '', html, iconSize: [14, 14], iconAnchor: [7, 7] });
+      const stateCls = (isSelected ? ' selected' : '') + (favs.has(p.id) ? ' fav' : '') + (p.sleeping ? ' sleep' : '') + (stale ? ' stale' : '');
+      let icon;
+      if (labelStyle === 'dot') {
+        const html = `<div class="pmark${stateCls}" style="background:${color}"></div>`;
+        icon = L.divIcon({ className: '', html, iconSize: [14, 14], iconAnchor: [7, 7] });
+      } else {
+        const label = labelStyle === 'bib' ? (p.bib || '-') : (p.last_name || p.first_name || p.nickname || '-');
+        const html = `<div class="plabel${stateCls}"><span class="pdot" style="background:${color}"></span>${escape(label)}</div>`;
+        icon = L.divIcon({ className: '', html, iconSize: null, iconAnchor: [8, 10] });
+      }
       if (existing) {
         existing.setLatLng([pt.lat, pt.lng]);
         existing.setIcon(icon);
@@ -670,6 +693,20 @@
       mapTheme = ev.target.value;
       localStorage.setItem(THEME_KEY, mapTheme);
       applyMapTheme();
+    });
+  }
+
+  {
+    const sel = document.getElementById('map-labels');
+    sel.value = labelStyle;
+    sel.addEventListener('change', (ev) => {
+      labelStyle = ev.target.value;
+      localStorage.setItem(LABELS_KEY, labelStyle);
+      if (mapLayers) {
+        mapLayers.participants.clearLayers();
+        mapLayers.participantMarkers.clear();
+        if (map) renderMap();
+      }
     });
   }
 

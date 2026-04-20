@@ -1,0 +1,531 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>madcap_fast</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+<style>
+  :root {
+    --bg: #0b0d10;
+    --panel: #14181d;
+    --panel-2: #1c2128;
+    --fg: #e6edf3;
+    --mute: #8b949e;
+    --accent: #f78166;
+    --good: #3fb950;
+    --warn: #d29922;
+    --bad: #f85149;
+    --border: #30363d;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, system-ui, sans-serif; }
+  header { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 16px; font-weight: 700; letter-spacing: -.01em; }
+  header .sub { color: var(--mute); font-size: 12px; }
+  header .sub b { color: var(--fg); }
+  main { display: grid; grid-template-columns: 360px 1fr; gap: 0; min-height: calc(100vh - 52px); }
+  #sidebar { border-right: 1px solid var(--border); background: var(--panel); padding: 14px 0 14px 0; overflow: auto; max-height: calc(100vh - 52px); }
+  #sidebar h2 { margin: 0 18px 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--mute); }
+  .p { padding: 8px 14px 8px 18px; border-bottom: 1px solid var(--border); display: grid; grid-template-columns: 36px 1fr auto; gap: 10px; align-items: center; cursor: pointer; }
+  .p:hover { background: var(--panel-2); }
+  .p.selected { background: #222a33; }
+  .rank { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--accent); font-size: 15px; }
+  .who { overflow: hidden; }
+  .who .name { font-weight: 600; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+  .who .meta { color: var(--mute); font-size: 12px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; color: var(--mute); font-size: 12px; }
+  .num b { color: var(--fg); font-weight: 600; font-size: 13px; }
+  #detail { padding: 18px 22px; overflow: auto; max-height: calc(100vh - 52px); }
+  #detail h2 { margin: 0 0 6px; font-size: 20px; }
+  #detail .tagline { color: var(--mute); margin: 0 0 18px; }
+  .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); margin-bottom: 22px; }
+  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+  .stat .label { color: var(--mute); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+  .stat .value { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; border: 1px solid var(--border); }
+  .badge.live { background: #2a1818; border-color: #5a2a2a; color: var(--bad); }
+  .badge.cold { color: var(--mute); }
+  .badge.stale { color: var(--warn); border-color: #4a3d0a; }
+  table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  th { color: var(--mute); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+  td.n { text-align: right; font-variant-numeric: tabular-nums; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; vertical-align: middle; margin-right: 6px; }
+  .dot.ok { background: var(--good); }
+  .dot.sleep { background: var(--mute); }
+  .dot.stale { background: var(--warn); }
+  input[type=search] { background: var(--panel-2); border: 1px solid var(--border); color: var(--fg); padding: 6px 10px; border-radius: 6px; width: 100%; font: inherit; }
+  .searchbar { padding: 0 18px 10px; }
+  .err { color: var(--bad); padding: 14px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  #perf { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; color: var(--mute); }
+  #perf b { color: var(--fg); }
+  .tabs { margin-left: auto; display: flex; gap: 4px; }
+  .tab { background: transparent; border: 1px solid var(--border); color: var(--mute); padding: 5px 12px; border-radius: 6px; font: inherit; cursor: pointer; }
+  .tab.active { background: var(--panel-2); color: var(--fg); border-color: #3d444d; }
+  .tab:hover { color: var(--fg); }
+  .view { display: none; }
+  .view.active { display: block; }
+  #view-list { display: none; }
+  #view-list.active { display: grid; grid-template-columns: 360px 1fr; min-height: calc(100vh - 52px); }
+  #view-map { position: relative; height: calc(100vh - 52px); }
+  #map { position: absolute; inset: 0; background: #111; }
+  .map-overlay { position: absolute; top: 12px; left: 12px; z-index: 500; background: rgba(20, 24, 29, 0.88); backdrop-filter: blur(6px); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; color: var(--fg); font-size: 12px; display: flex; gap: 10px; align-items: center; max-width: calc(100vw - 24px); }
+  .map-overlay input[type=search] { width: 200px; padding: 4px 8px; }
+  .map-legend { position: absolute; bottom: 12px; left: 12px; z-index: 500; background: rgba(20, 24, 29, 0.88); backdrop-filter: blur(6px); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; color: var(--fg); font-size: 11px; line-height: 1.6; }
+  .map-legend .row { display: flex; align-items: center; gap: 8px; }
+  .map-legend .sw { width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.3); }
+  /* Participant markers (div icons) */
+  .pmark { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,0.6), 0 2px 4px rgba(0,0,0,0.4); transition: transform .12s ease; }
+  .pmark.selected { transform: scale(1.6); border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent), 0 0 12px var(--accent); }
+  .pmark.sleep { opacity: 0.55; }
+  .pmark.stale { opacity: 0.35; border-style: dashed; }
+  .cpmark { background: var(--panel); color: var(--fg); border: 1px solid var(--accent); border-radius: 14px; padding: 2px 8px; font-size: 11px; font-weight: 700; white-space: nowrap; box-shadow: 0 2px 6px rgba(0,0,0,0.5); }
+  .cpmark.start { border-color: var(--good); color: var(--good); }
+  .cpmark.end { border-color: var(--bad); color: var(--bad); }
+  /* Leaflet popup theme */
+  .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--panel); color: var(--fg); border: 1px solid var(--border); box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
+  .leaflet-popup-content { margin: 10px 12px; font: 13px/1.4 inherit; }
+  .leaflet-popup-content b { color: var(--fg); }
+  .leaflet-popup-close-button { color: var(--mute) !important; }
+  .leaflet-container { font: inherit; background: #111; }
+  .leaflet-control-attribution { background: rgba(20,24,29,0.7) !important; color: var(--mute) !important; }
+  .leaflet-control-attribution a { color: var(--mute) !important; }
+  .leaflet-bar a, .leaflet-bar a:hover { background: var(--panel); color: var(--fg); border-bottom-color: var(--border); }
+  .leaflet-bar a:hover { background: var(--panel-2); }
+  .popup-actions { margin-top: 6px; }
+  .popup-actions button { background: var(--panel-2); border: 1px solid var(--border); color: var(--fg); padding: 3px 8px; border-radius: 4px; font: 12px inherit; cursor: pointer; }
+  .popup-actions button:hover { background: #2a3139; }
+  @media (max-width: 880px) {
+    #view-list.active { grid-template-columns: 1fr; }
+    #sidebar { max-height: 55vh; border-right: none; border-bottom: 1px solid var(--border); }
+    #detail { max-height: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>madcap<span style="color: var(--accent)">_fast</span></h1>
+  <div class="sub">
+    event <b id="slug">—</b> ·
+    <span id="perf">loading…</span> ·
+    <span id="status" class="badge cold">cold</span>
+  </div>
+  <div class="tabs" role="tablist">
+    <button class="tab active" data-tab="list" role="tab" aria-selected="true">List</button>
+    <button class="tab" data-tab="map" role="tab" aria-selected="false">Map</button>
+  </div>
+</header>
+
+<section id="view-list" class="view active">
+  <aside id="sidebar">
+    <h2>Leaderboard</h2>
+    <div class="searchbar"><input id="q" type="search" placeholder="search name / bib…" /></div>
+    <div id="plist"></div>
+  </aside>
+  <section id="detail">
+    <div id="body">Loading…</div>
+  </section>
+</section>
+
+<section id="view-map" class="view">
+  <div id="map"></div>
+  <div class="map-overlay">
+    <input id="mapq" type="search" placeholder="jump to rider…" />
+    <span id="mapcount" style="color: var(--mute)">—</span>
+  </div>
+  <div class="map-legend">
+    <div class="row"><span class="sw" style="background:#f85149"></span>rank 1–10</div>
+    <div class="row"><span class="sw" style="background:#d29922"></span>rank 11–50</div>
+    <div class="row"><span class="sw" style="background:#3fb950"></span>rank 51+</div>
+    <div class="row"><span class="sw" style="background:#8b949e;opacity:.55"></span>sleeping</div>
+    <div class="row"><span class="sw" style="background:#8b949e;opacity:.35;border-style:dashed"></span>no ping &gt;15m</div>
+  </div>
+</section>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+(() => {
+  const slug = location.pathname.startsWith('/event/') ? decodeURIComponent(location.pathname.slice(7)) : 'desertus-bikus-26';
+  document.getElementById('slug').textContent = slug;
+
+  let state = null;
+  let selected = null;
+  let refreshTimer = null;
+  let map = null;
+  let mapLayers = null; // { route, cps, participants (L.layerGroup), participantMarkers: Map<id, marker> }
+  let currentTab = 'list';
+
+  const fmtKm = (m) => (m == null ? '—' : (+m).toFixed(1) + ' km');
+  const fmtKmh = (v) => (v == null ? '—' : (+v).toFixed(1) + ' km/h');
+  const fmtTime = (iso) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    if (isNaN(d)) return iso;
+    return d.toLocaleString(undefined, { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+  };
+  const sinceText = (iso) => {
+    if (!iso) return '—';
+    const s = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (s < 60) return Math.round(s) + 's ago';
+    if (s < 3600) return Math.round(s / 60) + 'm ago';
+    if (s < 86400) return Math.round(s / 3600) + 'h ago';
+    return Math.round(s / 86400) + 'd ago';
+  };
+
+  async function load() {
+    const t0 = performance.now();
+    const res = await fetch(`/api/event/${encodeURIComponent(slug)}`, {
+      headers: { 'Accept-Encoding': 'br, gzip' },
+    });
+    const ttfb = performance.now() - t0;
+    if (!res.ok) {
+      document.getElementById('body').innerHTML = `<div class="err">upstream error: ${res.status}</div>`;
+      return;
+    }
+    const txt = await res.text();
+    const t1 = performance.now();
+    state = JSON.parse(txt);
+    const parseMs = performance.now() - t1;
+
+    const perf = document.getElementById('perf');
+    perf.innerHTML = `ttfb <b>${ttfb.toFixed(0)} ms</b> · payload <b>${(txt.length / 1024).toFixed(0)} KB</b> · parse <b>${parseMs.toFixed(0)} ms</b> · upstream-ms <b>${res.headers.get('x-upstream-ms') || '?'}</b> · cache-age <b>${res.headers.get('x-cache-age-ms') || '?'} ms</b>`;
+    const statusEl = document.getElementById('status');
+    if (res.headers.get('x-cache-stale') === '1') {
+      statusEl.className = 'badge stale';
+      statusEl.textContent = 'stale';
+    } else {
+      statusEl.className = 'badge live';
+      statusEl.textContent = 'live';
+    }
+
+    render();
+  }
+
+  function render() {
+    renderHeader();
+    renderList();
+    if (selected) renderDetail(selected);
+    else renderOverview();
+    if (map) renderMap();
+  }
+
+  function rankColor(rank) {
+    if (rank == null) return '#8b949e';
+    if (rank <= 10) return '#f85149';
+    if (rank <= 50) return '#d29922';
+    return '#3fb950';
+  }
+
+  function lastPointOf(participantId) {
+    const t = (state.tracks.tracks || []).find(x => x.participant_id === participantId);
+    if (!t || !t.track || !t.track.length) return null;
+    const p = t.track[t.track.length - 1];
+    return { lat: p[1], lng: p[2], elev: p[3], t: p[0] };
+  }
+
+  function ensureMap() {
+    if (map) return;
+    map = L.map('map', { preferCanvas: true, zoomControl: true, attributionControl: true }).setView([43, -1], 6);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      subdomains: 'abcd',
+    }).addTo(map);
+    mapLayers = {
+      routes: L.layerGroup().addTo(map),
+      cps: L.layerGroup().addTo(map),
+      participants: L.layerGroup().addTo(map),
+      participantMarkers: new Map(),
+      didFit: false,
+    };
+  }
+
+  function renderMap() {
+    if (!state || !map) return;
+
+    // --- routes ---
+    mapLayers.routes.clearLayers();
+    const allRouteBounds = [];
+    for (const r of (state.geo.routes || [])) {
+      let gj = r.geojson;
+      if (typeof gj === 'string') {
+        try { gj = JSON.parse(gj); } catch { continue; }
+      }
+      const layer = L.geoJSON(gj, {
+        style: { color: r.color || '#f78166', weight: 3, opacity: 0.85 },
+      });
+      layer.addTo(mapLayers.routes);
+      try { allRouteBounds.push(layer.getBounds()); } catch {}
+    }
+
+    // --- checkpoints ---
+    mapLayers.cps.clearLayers();
+    for (const c of (state.geo.cps || [])) {
+      const isStart = c.cp_type === 'START' || c.order === 0;
+      const isEnd = c.cp_type === 'END';
+      const cls = 'cpmark' + (isStart ? ' start' : isEnd ? ' end' : '');
+      const icon = L.divIcon({
+        className: '',
+        html: `<div class="${cls}">${escape(c.short_name || ('CP' + c.order))}</div>`,
+        iconSize: null,
+        iconAnchor: [0, 0],
+      });
+      L.marker([c.latitude, c.longitude], { icon, keyboard: false })
+        .bindPopup(`<b>${escape(c.short_name || '')}</b> — ${escape(c.name || '')}<br/><span style="color:var(--mute)">${escape(c.cp_type || '')}</span>`)
+        .addTo(mapLayers.cps);
+    }
+
+    // --- participants ---
+    const partsById = new Map(state.participants.map(p => [p.id, p]));
+    const seen = new Set();
+    for (const p of state.participants) {
+      const pt = lastPointOf(p.id);
+      if (!pt) continue;
+      seen.add(p.id);
+      const existing = mapLayers.participantMarkers.get(p.id);
+      const isSelected = selected && selected.id === p.id;
+      const color = rankColor(p.overall_rank);
+      const stale = p.last_ping && (Date.now() - new Date(p.last_ping).getTime()) > 15 * 60000;
+      const cls = 'pmark' + (isSelected ? ' selected' : '') + (p.sleeping ? ' sleep' : '') + (stale ? ' stale' : '');
+      const html = `<div class="${cls}" style="background:${color}"></div>`;
+      const icon = L.divIcon({ className: '', html, iconSize: [14, 14], iconAnchor: [7, 7] });
+      if (existing) {
+        existing.setLatLng([pt.lat, pt.lng]);
+        existing.setIcon(icon);
+      } else {
+        const m = L.marker([pt.lat, pt.lng], { icon, riseOnHover: true });
+        m.bindPopup(() => participantPopup(partsById.get(p.id)));
+        m.on('click', () => { selected = partsById.get(p.id); render(); });
+        m.addTo(mapLayers.participants);
+        mapLayers.participantMarkers.set(p.id, m);
+      }
+    }
+    // Remove markers for participants that no longer have a position.
+    for (const [id, m] of mapLayers.participantMarkers) {
+      if (!seen.has(id)) {
+        mapLayers.participants.removeLayer(m);
+        mapLayers.participantMarkers.delete(id);
+      }
+    }
+    document.getElementById('mapcount').textContent = `${seen.size} / ${state.participants.length} on map`;
+
+    // Fit once on first render.
+    if (!mapLayers.didFit) {
+      let bounds = null;
+      for (const b of allRouteBounds) bounds = bounds ? bounds.extend(b) : L.latLngBounds(b.getSouthWest(), b.getNorthEast());
+      if (!bounds) {
+        const pts = [];
+        for (const m of mapLayers.participantMarkers.values()) pts.push(m.getLatLng());
+        for (const c of (state.geo.cps || [])) pts.push([c.latitude, c.longitude]);
+        if (pts.length) bounds = L.latLngBounds(pts);
+      }
+      if (bounds && bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [30, 30] });
+        mapLayers.didFit = true;
+      }
+    }
+  }
+
+  function participantPopup(p) {
+    const pt = lastPointOf(p.id);
+    const when = pt ? sinceText(p.last_ping || new Date(Date.now() - 0).toISOString()) : '—';
+    return `
+      <div><b>#${p.overall_rank ?? '-'}</b> ${escape(p.first_name || '')} ${escape(p.last_name || '')}</div>
+      <div style="color:var(--mute);font-size:12px;margin-top:2px">bib ${escape(p.bib || '-')} · ${escape((p.attributes && p.attributes.category) || '')}</div>
+      <div style="margin-top:6px"><b>${fmtKm(p.distance)}</b> @ ${fmtKmh(p.speed)}</div>
+      <div style="color:var(--mute);font-size:12px">to next CP: ${fmtKm(p.distance_to_next_cp)}</div>
+      <div style="color:var(--mute);font-size:12px">last ping: ${when}${p.sleeping ? ' · zZz' : ''}${p.battery != null ? ' · ' + p.battery + '%' : ''}</div>
+      <div class="popup-actions"><button data-action="detail" data-id="${escape(p.id)}">open details →</button></div>
+    `;
+  }
+
+  // Delegate popup button clicks so fresh popups just work.
+  document.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('.popup-actions button[data-action="detail"]');
+    if (!btn) return;
+    const p = state.participants.find(x => x.id === btn.dataset.id);
+    if (p) {
+      selected = p;
+      setTab('list');
+      render();
+    }
+  });
+
+  function setTab(name) {
+    if (currentTab === name) return;
+    currentTab = name;
+    document.querySelectorAll('.tab').forEach(t => {
+      const active = t.dataset.tab === name;
+      t.classList.toggle('active', active);
+      t.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    document.getElementById('view-list').classList.toggle('active', name === 'list');
+    document.getElementById('view-map').classList.toggle('active', name === 'map');
+    if (name === 'map') {
+      ensureMap();
+      // Leaflet needs a size recalc after the container becomes visible.
+      setTimeout(() => { map.invalidateSize(); renderMap(); }, 0);
+    }
+  }
+
+  document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => setTab(t.dataset.tab)));
+
+  document.getElementById('mapq').addEventListener('input', (ev) => {
+    const q = ev.target.value.trim().toLowerCase();
+    if (!q || !map || !mapLayers) return;
+    const hit = state.participants.find(p =>
+      String(p.bib || '').toLowerCase() === q ||
+      (p.last_name || '').toLowerCase().includes(q) ||
+      (p.first_name || '').toLowerCase().includes(q) ||
+      (p.nickname || '').toLowerCase().includes(q)
+    );
+    if (!hit) return;
+    const m = mapLayers.participantMarkers.get(hit.id);
+    if (m) {
+      selected = hit;
+      render();
+      map.setView(m.getLatLng(), Math.max(map.getZoom(), 12));
+      m.openPopup();
+    }
+  });
+
+  function renderHeader() {
+    const info = state.info;
+    document.title = `${info.name} — madcap_fast`;
+  }
+
+  function filteredParticipants() {
+    const q = (document.getElementById('q').value || '').trim().toLowerCase();
+    let list = state.participants.slice();
+    list.sort((a, b) => (a.overall_rank ?? 1e9) - (b.overall_rank ?? 1e9));
+    if (!q) return list;
+    return list.filter(p =>
+      (p.first_name || '').toLowerCase().includes(q) ||
+      (p.last_name || '').toLowerCase().includes(q) ||
+      (p.nickname || '').toLowerCase().includes(q) ||
+      String(p.bib || '').includes(q)
+    );
+  }
+
+  function renderList() {
+    const root = document.getElementById('plist');
+    const list = filteredParticipants();
+    const frag = document.createDocumentFragment();
+    for (const p of list) {
+      const div = document.createElement('div');
+      div.className = 'p' + (selected && selected.id === p.id ? ' selected' : '');
+      div.dataset.id = p.id;
+      const nick = p.nickname ? ` “${p.nickname}”` : '';
+      const dotClass = p.sleeping ? 'sleep' : (p.last_ping && (Date.now() - new Date(p.last_ping)) > 15 * 60000 ? 'stale' : 'ok');
+      div.innerHTML = `
+        <div class="rank">#${p.overall_rank ?? '-'}</div>
+        <div class="who">
+          <div class="name"><span class="dot ${dotClass}"></span>${escape(p.first_name || '')} ${escape(p.last_name || '')}${escape(nick)}</div>
+          <div class="meta">bib ${escape(p.bib || '-')} · ${escape((p.attributes && p.attributes.category) || '')} · ${sinceText(p.last_ping)}</div>
+        </div>
+        <div class="num"><b>${fmtKm(p.distance)}</b><br/>${fmtKmh(p.speed)}</div>
+      `;
+      div.addEventListener('click', () => { selected = p; render(); });
+      frag.appendChild(div);
+    }
+    root.replaceChildren(frag);
+  }
+
+  function renderOverview() {
+    const info = state.info;
+    const geo = state.geo;
+    const parts = state.participants;
+    const active = parts.filter(p => p.status === 'REGISTERED' || p.status === 'ACTIVE' || !!p.last_ping).length;
+    const sleeping = parts.filter(p => p.sleeping).length;
+    const started = parts.filter(p => (p.distance || 0) > 0).length;
+    const body = document.getElementById('body');
+    body.innerHTML = `
+      <h2>${escape(info.name)} · <span style="color:var(--mute)">${escape(info.start_place_name || '')} → ${escape(info.end_place_name || '')}</span></h2>
+      <p class="tagline">${escape(info.description || '')}</p>
+      <div class="grid">
+        <div class="stat"><div class="label">Participants</div><div class="value">${parts.length}</div></div>
+        <div class="stat"><div class="label">Active</div><div class="value">${active}</div></div>
+        <div class="stat"><div class="label">Sleeping</div><div class="value">${sleeping}</div></div>
+        <div class="stat"><div class="label">Started</div><div class="value">${started}</div></div>
+        <div class="stat"><div class="label">Distance</div><div class="value">${escape(info.distance || '—')}</div></div>
+        <div class="stat"><div class="label">Surface</div><div class="value">${escape(info.surface || '—')}</div></div>
+        <div class="stat"><div class="label">Starts</div><div class="value">${fmtTime(info.start_date)}</div></div>
+        <div class="stat"><div class="label">Ends</div><div class="value">${fmtTime(info.end_date)}</div></div>
+      </div>
+      <h3 style="margin:18px 0 6px">Checkpoints</h3>
+      <table>
+        <thead><tr><th>#</th><th>Name</th><th>Type</th><th class="n">Lat</th><th class="n">Lng</th></tr></thead>
+        <tbody>${(geo.cps || []).map(c => `
+          <tr>
+            <td>${c.order}</td>
+            <td><b>${escape(c.short_name || '')}</b> — ${escape(c.name || '')}</td>
+            <td>${escape(c.cp_type || '')}</td>
+            <td class="n">${c.latitude.toFixed(5)}</td>
+            <td class="n">${c.longitude.toFixed(5)}</td>
+          </tr>`).join('')}</tbody>
+      </table>
+      <p style="color:var(--mute);margin-top:18px">Select a participant to see their splits and latest position.</p>
+    `;
+  }
+
+  function renderDetail(p) {
+    const cps = (state.geo.cps || []).slice().sort((a, b) => a.order - b.order);
+    const cp_rank = p.cp_rank || [];
+    const tracks = (state.tracks.tracks || []).find(t => t.participant_id === p.id);
+    const body = document.getElementById('body');
+    const lastPoint = tracks && tracks.track && tracks.track.length ? tracks.track[tracks.track.length - 1] : null;
+    body.innerHTML = `
+      <h2>#${p.overall_rank ?? '-'} · ${escape(p.first_name || '')} ${escape(p.last_name || '')} ${p.nickname ? '“' + escape(p.nickname) + '”' : ''}</h2>
+      <p class="tagline">bib <b>${escape(p.bib || '-')}</b> · tracker ${escape(String(p.tracker || '-'))} · ${escape((p.attributes && p.attributes.category) || '')} · ${escape(p.country || '')}</p>
+      <div class="grid">
+        <div class="stat"><div class="label">Distance</div><div class="value">${fmtKm(p.distance)}</div></div>
+        <div class="stat"><div class="label">Speed</div><div class="value">${fmtKmh(p.speed)}</div></div>
+        <div class="stat"><div class="label">To next CP</div><div class="value">${fmtKm(p.distance_to_next_cp)}</div></div>
+        <div class="stat"><div class="label">Overall rank</div><div class="value">#${p.overall_rank ?? '-'}</div></div>
+        <div class="stat"><div class="label">Category rank</div><div class="value">#${p.rank ?? '-'}</div></div>
+        <div class="stat"><div class="label">Last ping</div><div class="value">${sinceText(p.last_ping)}</div></div>
+        <div class="stat"><div class="label">Battery</div><div class="value">${p.battery != null ? p.battery + '%' : '—'}</div></div>
+        <div class="stat"><div class="label">Status</div><div class="value">${escape(p.status || '—')}${p.sleeping ? ' · zZz' : ''}</div></div>
+      </div>
+      <h3 style="margin:18px 0 6px">Checkpoints</h3>
+      <table>
+        <thead><tr><th>#</th><th>Name</th><th class="n">Rank</th><th>When</th></tr></thead>
+        <tbody>${cps.map(c => {
+          const entry = cp_rank[c.order];
+          const rank = entry && entry[0];
+          const when = entry && entry[1];
+          return `<tr>
+            <td>${c.order}</td>
+            <td><b>${escape(c.short_name || '')}</b> — ${escape(c.name || '')}</td>
+            <td class="n">${rank != null ? '#' + rank : '—'}</td>
+            <td>${when ? fmtTime(when) : '—'}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+      ${lastPoint ? `
+        <h3 style="margin:18px 0 6px">Last known position</h3>
+        <p>lat <b>${lastPoint[1].toFixed(5)}</b>, lng <b>${lastPoint[2].toFixed(5)}</b>, elevation <b>${lastPoint[3]} m</b> · <a href="https://www.google.com/maps?q=${lastPoint[1]},${lastPoint[2]}" target="_blank" rel="noopener">open in Maps</a></p>
+        <p style="color:var(--mute)">Track has ${tracks.track.length} points.</p>
+      ` : `<p style="color:var(--mute)">No track points yet.</p>`}
+    `;
+  }
+
+  function escape(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  document.getElementById('q').addEventListener('input', () => renderList());
+
+  load().then(() => {
+    refreshTimer = setInterval(load, 30000);
+  }).catch(e => {
+    document.getElementById('body').innerHTML = `<div class="err">${escape(e.message)}</div>`;
+  });
+})();
+</script>
+</body>
+</html>

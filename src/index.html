@@ -94,6 +94,25 @@
   .tab:hover { color: var(--fg); }
   .tab.notif.on { background: #3a2a0a; border-color: #5a3a0a; color: #f1c40f; }
   .tab.notif:disabled { opacity: 0.4; cursor: not-allowed; }
+  .side-menu-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.5); opacity: 0; pointer-events: none; transition: opacity .2s ease; z-index: 900; }
+  .side-menu-backdrop.open { opacity: 1; pointer-events: auto; }
+  .side-menu { position: fixed; right: 0; top: 0; bottom: 0; width: 360px; max-width: 92vw; background: var(--panel); border-left: 1px solid var(--border); transform: translateX(100%); transition: transform .22s ease; z-index: 901; display: flex; flex-direction: column; }
+  .side-menu.open { transform: translateX(0); }
+  .side-menu-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+  .side-menu-head h2 { margin: 0; font-size: 14px; font-weight: 700; color: var(--fg); }
+  .side-menu-close { background: transparent; border: 0; color: var(--mute); cursor: pointer; font-size: 18px; line-height: 1; padding: 2px 6px; }
+  .side-menu-close:hover { color: var(--fg); }
+  .side-menu-body { padding: 14px 16px; overflow-y: auto; flex: 1; }
+  .side-menu-body h3 { margin: 14px 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--mute); font-weight: 600; }
+  .side-menu-body h3:first-child { margin-top: 0; }
+  .side-menu-body p { margin: 0 0 8px; color: var(--fg); line-height: 1.45; font-size: 13px; }
+  .side-menu-body .kv { display: grid; grid-template-columns: 90px 1fr; gap: 4px 10px; font-size: 13px; color: var(--fg); }
+  .side-menu-body .kv dt { color: var(--mute); }
+  .side-menu-body .kv dd { margin: 0; }
+  .side-menu-body .links { display: flex; flex-direction: column; gap: 6px; }
+  .side-menu-body .links a { color: var(--accent); font-size: 13px; word-break: break-all; }
+  .sponsor-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .sponsor-grid img { width: 100%; height: 90px; object-fit: contain; background: #fff; border-radius: 6px; padding: 6px; border: 1px solid var(--border); }
   .view { display: none; }
   .view.active { display: block; }
   #view-list { display: none; }
@@ -197,6 +216,7 @@
     <span id="status" class="badge cold">cold</span>
   </div>
   <div class="tabs" role="tablist" id="tabs" style="display:none">
+    <button id="side-menu-open" class="tab" type="button" title="event info &amp; sponsors">ℹ</button>
     <button id="notif-toggle" class="tab notif" type="button" title="notifications" aria-pressed="false">🔔</button>
     <button class="tab active" data-tab="list" role="tab" aria-selected="true">List</button>
     <button class="tab" data-tab="map" role="tab" aria-selected="false">Map</button>
@@ -281,6 +301,15 @@
     <div class="row"><span class="sw" style="background:#8b949e;opacity:.35;border-style:dashed"></span>no ping &gt;15m</div>
   </div>
 </section>
+<div id="side-menu-backdrop" class="side-menu-backdrop" aria-hidden="true"></div>
+<aside id="side-menu" class="side-menu" role="dialog" aria-label="Event info" aria-hidden="true">
+  <div class="side-menu-head">
+    <h2 id="side-menu-title">Event</h2>
+    <button id="side-menu-close" class="side-menu-close" type="button" aria-label="close">✕</button>
+  </div>
+  <div id="side-menu-body" class="side-menu-body"></div>
+</aside>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script>
@@ -589,17 +618,29 @@
     }
   }
 
+  // Upstream sends naive ISO strings (no timezone) that are actually UTC.
+  // Append 'Z' when no timezone is present so Date() doesn't parse as local.
+  function parseUtc(s) {
+    if (!s) return null;
+    const normalized = /Z$|[+-]\d\d:?\d\d$/.test(s) ? s : s + 'Z';
+    const d = new Date(normalized);
+    return isNaN(d) ? null : d;
+  }
+  function utcMs(s) { const d = parseUtc(s); return d ? d.getTime() : null; }
+
   const fmtKm = (m) => (m == null ? '—' : (+m).toFixed(1) + ' km');
   const fmtKmh = (v) => (v == null ? '—' : (+v).toFixed(1) + ' km/h');
   const fmtTime = (iso) => {
     if (!iso) return '—';
-    const d = new Date(iso);
-    if (isNaN(d)) return iso;
+    const d = parseUtc(iso);
+    if (!d) return iso;
     return d.toLocaleString(undefined, { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
   };
   const sinceText = (iso) => {
     if (!iso) return '—';
-    const s = (Date.now() - new Date(iso).getTime()) / 1000;
+    const ms = utcMs(iso);
+    if (ms == null) return '—';
+    const s = (Date.now() - ms) / 1000;
     if (s < 60) return Math.round(s) + 's ago';
     if (s < 3600) return Math.round(s / 60) + 'm ago';
     if (s < 86400) return Math.round(s / 3600) + 'h ago';
@@ -654,10 +695,10 @@
   }
 
   function eventStartMs() {
-    return state && state.info && state.info.start_date ? new Date(state.info.start_date).getTime() : null;
+    return state && state.info ? utcMs(state.info.start_date) : null;
   }
   function eventEndMs() {
-    return state && state.info && state.info.end_date ? new Date(state.info.end_date).getTime() : null;
+    return state && state.info ? utcMs(state.info.end_date) : null;
   }
   function currentMaxTime() {
     const end = eventEndMs();
@@ -846,7 +887,8 @@
       const existing = mapLayers.participantMarkers.get(p.id);
       const isSelected = selected && selected.id === p.id;
       const color = rankColor(p.overall_rank);
-      const stale = p.last_ping && (Date.now() - new Date(p.last_ping).getTime()) > 15 * 60000;
+      const lpMs = utcMs(p.last_ping);
+      const stale = lpMs != null && (Date.now() - lpMs) > 15 * 60000;
       const stateCls = (isSelected ? ' selected' : '') + (favs.has(p.id) ? ' fav' : '') + (p.sleeping ? ' sleep' : '') + (stale ? ' stale' : '');
       let icon;
       if (labelStyle === 'dot') {
@@ -912,9 +954,9 @@
   function computeCactusPath() {
     if (cactusPath) return cactusPath;
     if (!state || !state.info) return null;
-    const startMs = state.info.start_date ? new Date(state.info.start_date).getTime() : NaN;
-    const endMs = state.info.end_date ? new Date(state.info.end_date).getTime() : NaN;
-    if (!isFinite(startMs) || !isFinite(endMs) || endMs <= startMs) return null;
+    const startMs = utcMs(state.info.start_date);
+    const endMs = utcMs(state.info.end_date);
+    if (startMs == null || endMs == null || endMs <= startMs) return null;
     const route = ((state.geo && state.geo.routes) || []).find(r => r.name === 'Cactus');
     if (!route) return null;
     let gj = route.geojson;
@@ -1062,6 +1104,73 @@
     }
   });
 
+  function renderSideMenu() {
+    if (!state || !state.info) return;
+    const info = state.info;
+    document.getElementById('side-menu-title').textContent = info.name || 'Event';
+    const parts = [];
+    if (info.description) parts.push(`<p>${escape(info.description)}</p>`);
+    const places = [info.start_place_name, info.end_place_name].filter(Boolean).join(' → ');
+    parts.push('<h3>Details</h3>');
+    parts.push('<dl class="kv">');
+    if (places) parts.push(`<dt>Route</dt><dd>${escape(places)}</dd>`);
+    if (info.distance) parts.push(`<dt>Distance</dt><dd>${escape(info.distance)}</dd>`);
+    if (info.surface) parts.push(`<dt>Surface</dt><dd>${escape(info.surface)}</dd>`);
+    if (info.start_date) parts.push(`<dt>Starts</dt><dd>${fmtTime(info.start_date)}</dd>`);
+    if (info.end_date) parts.push(`<dt>Ends</dt><dd>${fmtTime(info.end_date)}</dd>`);
+    if (Array.isArray(info.rankings) && info.rankings.length) parts.push(`<dt>Rankings</dt><dd>${escape(info.rankings.join(', '))}</dd>`);
+    parts.push('</dl>');
+
+    const links = [];
+    if (info.link) links.push(`<a href="${escapeAttr(info.link)}" target="_blank" rel="noopener">${escape(info.link)}</a>`);
+    if (info.insta) links.push(`<a href="${escapeAttr(info.insta)}" target="_blank" rel="noopener">Instagram</a>`);
+    if (links.length) {
+      parts.push('<h3>Links</h3>');
+      parts.push(`<div class="links">${links.join('')}</div>`);
+    }
+
+    const phones = [];
+    if (Array.isArray(info.phone_emergency)) {
+      for (const pe of info.phone_emergency) {
+        if (Array.isArray(pe) && pe.length >= 2) phones.push(`<dt>${escape(pe[0])}</dt><dd><a href="tel:${escapeAttr(pe[1])}">${escape(pe[1])}</a></dd>`);
+      }
+    }
+    if (Array.isArray(info.phone_organizers)) {
+      for (const p of info.phone_organizers) phones.push(`<dt>Organizers</dt><dd><a href="tel:${escapeAttr(p)}">${escape(p)}</a></dd>`);
+    }
+    if (Array.isArray(info.phone_technical)) {
+      for (const p of info.phone_technical) phones.push(`<dt>Technical</dt><dd><a href="tel:${escapeAttr(p)}">${escape(p)}</a></dd>`);
+    }
+    if (phones.length) {
+      parts.push('<h3>Contacts</h3>');
+      parts.push(`<dl class="kv">${phones.join('')}</dl>`);
+    }
+
+    const sponsors = Array.isArray(info.sponsors) ? info.sponsors.filter(Boolean) : [];
+    if (sponsors.length) {
+      parts.push('<h3>Sponsors</h3>');
+      parts.push('<div class="sponsor-grid">');
+      for (const url of sponsors) {
+        parts.push(`<img src="${escapeAttr(url)}" alt="sponsor" loading="lazy" />`);
+      }
+      parts.push('</div>');
+    }
+
+    document.getElementById('side-menu-body').innerHTML = parts.join('');
+  }
+
+  function openSideMenu() {
+    renderSideMenu();
+    document.getElementById('side-menu').classList.add('open');
+    document.getElementById('side-menu-backdrop').classList.add('open');
+    document.getElementById('side-menu').setAttribute('aria-hidden', 'false');
+  }
+  function closeSideMenu() {
+    document.getElementById('side-menu').classList.remove('open');
+    document.getElementById('side-menu-backdrop').classList.remove('open');
+    document.getElementById('side-menu').setAttribute('aria-hidden', 'true');
+  }
+
   function renderFeed() {
     const root = document.getElementById('feed-list');
     const count = document.getElementById('feed-count');
@@ -1074,7 +1183,7 @@
     } else if (feedFilter === 'fav') {
       list = list.filter(e => favs.has(e.participant_id));
     }
-    list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    list.sort((a, b) => (utcMs(b.timestamp) || 0) - (utcMs(a.timestamp) || 0));
     count.textContent = `${list.length} / ${entries.length}`;
     const frag = document.createDocumentFragment();
     for (const e of list) {
@@ -1221,7 +1330,8 @@
       div.className = 'p' + (selected && selected.id === p.id ? ' selected' : '');
       div.dataset.id = p.id;
       const nick = p.nickname ? ` “${p.nickname}”` : '';
-      const dotClass = p.sleeping ? 'sleep' : (p.last_ping && (Date.now() - new Date(p.last_ping)) > 15 * 60000 ? 'stale' : 'ok');
+      const lpMs = utcMs(p.last_ping);
+      const dotClass = p.sleeping ? 'sleep' : (lpMs != null && (Date.now() - lpMs) > 15 * 60000 ? 'stale' : 'ok');
       const isFav = favs.has(p.id);
       const rankNum = catFilter ? p.rank : p.overall_rank;
       let deltaHtml = '';
@@ -1450,6 +1560,15 @@
     return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
+  document.getElementById('side-menu-open').addEventListener('click', openSideMenu);
+  document.getElementById('side-menu-close').addEventListener('click', closeSideMenu);
+  document.getElementById('side-menu-backdrop').addEventListener('click', closeSideMenu);
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && document.getElementById('side-menu').classList.contains('open')) {
+      closeSideMenu();
+    }
+  });
+
   document.querySelectorAll('[data-ffilter]').forEach(b => {
     b.addEventListener('click', () => {
       feedFilter = b.dataset.ffilter;
@@ -1490,7 +1609,7 @@
   document.getElementById('map-traces').addEventListener('click', () => setShowTraces(!showTraces));
 
   // -------- home view ----------
-  function parseISO(s) { if (!s) return null; const d = new Date(s); return isNaN(d) ? null : d; }
+  function parseISO(s) { return parseUtc(s); }
 
   function classifyEvent(e) {
     const now = Date.now();

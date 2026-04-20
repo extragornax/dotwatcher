@@ -36,6 +36,10 @@
   .who .meta { color: var(--mute); font-size: 12px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
   .num { text-align: right; font-variant-numeric: tabular-nums; color: var(--mute); font-size: 12px; }
   .num b { color: var(--fg); font-weight: 600; font-size: 13px; }
+  .num .delta { font-size: 11px; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .num .delta.ahead { color: var(--good); }
+  .num .delta.behind { color: var(--bad); }
+  .num .delta.even { color: var(--mute); }
   .star { background: none; border: 0; color: var(--mute); cursor: pointer; font-size: 16px; padding: 2px 4px; line-height: 1; }
   .star:hover, .star.on { color: #f1c40f; }
   .fav-toggle { background: var(--panel-2); border: 1px solid var(--border); color: var(--mute); padding: 6px 10px; border-radius: 6px; cursor: pointer; font: inherit; }
@@ -157,6 +161,10 @@
   .profile .area { fill: var(--accent); opacity: 0.15; }
   .profile.speed .line { stroke: #3fb950; }
   .profile.speed .area { fill: #3fb950; opacity: 0.15; }
+  .profile.timeline svg { height: 32px; }
+  .profile.timeline .move { fill: #3fb950; opacity: 0.22; }
+  .profile.timeline .rest { fill: #d29922; opacity: 0.85; }
+  .profile.timeline .nowline { stroke: var(--accent); stroke-width: 1; opacity: 0.8; }
   @media (max-width: 880px) {
     #view-list.active { grid-template-columns: 1fr; }
     #sidebar { max-height: 55vh; border-right: none; border-bottom: 1px solid var(--border); }
@@ -523,6 +531,7 @@
     playbackTime = clamped >= end ? null : clamped;
     updateScrubberUI();
     scheduleRenderMap();
+    if (currentTab === 'list') renderList();
   }
 
   function stopPlayback() {
@@ -546,6 +555,7 @@
     }
     updateScrubberUI();
     scheduleRenderMap();
+    if (currentTab === 'list') renderList();
   }
 
   function togglePlay() {
@@ -709,6 +719,28 @@
     for (let i = 1; i < coords.length; i++) cum.push(cum[i-1] + haversineKm(coords[i-1], coords[i]));
     cactusPath = { coords, cum, total: cum[cum.length - 1], start: startMs, end: endMs };
     return cactusPath;
+  }
+
+  function cactusAt(ms) {
+    const cp = computeCactusPath();
+    if (!cp) return null;
+    let f = (ms - cp.start) / (cp.end - cp.start);
+    f = Math.max(0, Math.min(1, f));
+    return {
+      km: f * cp.total,
+      total: cp.total,
+      fraction: f,
+      speedKmh: cp.total / ((cp.end - cp.start) / 3600000),
+    };
+  }
+
+  function fmtDelta(dk, dh) {
+    const sign = dk >= 0 ? '+' : '−';
+    const absH = Math.abs(dh);
+    const H = Math.floor(absH);
+    const M = Math.round((absH - H) * 60);
+    const t = H > 0 ? `${H}h${String(M).padStart(2, '0')}` : `${M}m`;
+    return `${sign}${t} · ${sign}${Math.abs(dk).toFixed(0)} km`;
   }
 
   function cactusPosition() {
@@ -931,6 +963,7 @@
     renderCategoryBar();
     const root = document.getElementById('plist');
     const list = filteredParticipants();
+    const cd = cactusAt(currentPlaybackTime());
     const frag = document.createDocumentFragment();
     for (const p of list) {
       const div = document.createElement('div');
@@ -940,13 +973,20 @@
       const dotClass = p.sleeping ? 'sleep' : (p.last_ping && (Date.now() - new Date(p.last_ping)) > 15 * 60000 ? 'stale' : 'ok');
       const isFav = favs.has(p.id);
       const rankNum = catFilter ? p.rank : p.overall_rank;
+      let deltaHtml = '';
+      if (cd && p.distance != null) {
+        const dk = p.distance - cd.km;
+        const dh = dk / cd.speedKmh;
+        const cls = Math.abs(dk) < 0.5 ? 'even' : (dk > 0 ? 'ahead' : 'behind');
+        deltaHtml = `<div class="delta ${cls}" title="vs 🌵 cactus pacer">${fmtDelta(dk, dh)}</div>`;
+      }
       div.innerHTML = `
         <div class="rank">#${rankNum ?? '-'}</div>
         <div class="who">
           <div class="name"><span class="dot ${dotClass}"></span>${escape(p.first_name || '')} ${escape(p.last_name || '')}${escape(nick)}</div>
           <div class="meta">bib ${escape(p.bib || '-')} · ${escape((p.attributes && p.attributes.category) || '')} · ${sinceText(p.last_ping)}</div>
         </div>
-        <div class="num"><b>${fmtKm(p.distance)}</b><br/>${fmtKmh(p.speed)}</div>
+        <div class="num"><b>${fmtKm(p.distance)}</b><br/>${fmtKmh(p.speed)}${deltaHtml}</div>
         <button class="star ${isFav ? 'on' : ''}" data-action="fav" data-id="${escape(p.id)}" title="favorite" aria-pressed="${isFav}">★</button>
       `;
       div.addEventListener('click', (ev) => {
@@ -1021,6 +1061,70 @@
     return `<path class="area" d="${area}"/><path class="line" d="${d}"/>`;
   }
 
+  function fmtDur(s) {
+    if (!isFinite(s) || s < 30) return '0m';
+    const h = Math.floor(s / 3600);
+    const m = Math.round((s - h * 3600) / 60);
+    if (h > 0) return `${h}h${String(m).padStart(2, '0')}`;
+    return `${m}m`;
+  }
+
+  function computeRestBlocks(track) {
+    const SPEED_THRESHOLD = 1.5; // km/h
+    const MIN_BLOCK_S = 20 * 60;
+    const blocks = [];
+    if (!track || track.length < 2) return { blocks, totalRest: 0 };
+    let cur = null;
+    for (let i = 0; i < track.length; i++) {
+      const sp = track[i][4];
+      const t = track[i][0];
+      const stopped = sp != null && sp <= SPEED_THRESHOLD;
+      if (stopped) {
+        if (!cur) cur = { start: t, end: t };
+        else cur.end = t;
+      } else {
+        if (cur && cur.end - cur.start >= MIN_BLOCK_S) blocks.push(cur);
+        cur = null;
+      }
+    }
+    if (cur && cur.end - cur.start >= MIN_BLOCK_S) blocks.push(cur);
+    const totalRest = blocks.reduce((a, b) => a + (b.end - b.start), 0);
+    return { blocks, totalRest };
+  }
+
+  function renderRestTimeline(p) {
+    const track = ((state.tracks && state.tracks.tracks) || []).find(t => t.participant_id === p.id);
+    if (!track || !track.track || track.track.length < 2) return '';
+    const pts = track.track;
+    const t0 = pts[0][0], tN = pts[pts.length - 1][0];
+    if (tN <= t0) return '';
+    const { blocks, totalRest } = computeRestBlocks(pts);
+    const W = 600, H = 32;
+    const xOf = t => ((t - t0) / (tN - t0)) * W;
+    const startMs = eventStartMs();
+    const fmtBlockStart = (relS) => startMs
+      ? new Date(startMs + relS * 1000).toLocaleString(undefined, { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+      : '';
+    const rests = blocks.map(b => {
+      const x = xOf(b.start);
+      const w = Math.max(1, xOf(b.end) - x);
+      const title = `${fmtDur(b.end - b.start)} · ${fmtBlockStart(b.start)}`;
+      return `<rect class="rest" x="${x.toFixed(1)}" y="4" width="${w.toFixed(1)}" height="${H - 8}" rx="2" ry="2"><title>${escape(title)}</title></rect>`;
+    }).join('');
+    const longest = blocks.reduce((a, b) => Math.max(a, b.end - b.start), 0);
+    const total = tN - t0;
+    const moving = Math.max(0, total - totalRest);
+    return `
+      <div class="profile timeline">
+        <h4>Rest &amp; movement <span class="range">${fmtDur(moving)} moving · ${fmtDur(totalRest)} at rest${blocks.length ? ` · ${blocks.length} block${blocks.length === 1 ? '' : 's'} · longest ${fmtDur(longest)}` : ''}</span></h4>
+        <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+          <rect class="move" x="0" y="4" width="${W}" height="${H - 8}" rx="2" ry="2"/>
+          ${rests}
+        </svg>
+      </div>
+    `;
+  }
+
   function renderProfiles(p) {
     const track = ((state.tracks && state.tracks.tracks) || []).find(t => t.participant_id === p.id);
     if (!track || !track.track || track.track.length < 2) return '';
@@ -1067,6 +1171,7 @@
         <div class="stat"><div class="label">Status</div><div class="value">${escape(p.status || '—')}${p.sleeping ? ' · zZz' : ''}</div></div>
       </div>
       ${renderProfiles(p)}
+      ${renderRestTimeline(p)}
       <h3 style="margin:18px 0 6px">Checkpoints</h3>
       <table>
         <thead><tr><th>#</th><th>Name</th><th class="n">Rank</th><th>When</th></tr></thead>

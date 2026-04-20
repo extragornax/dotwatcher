@@ -94,20 +94,101 @@ async fn fetch_raw(
     Ok(raw)
 }
 
+async fn fetch_tracks_paginated(client: &Client, slug: &str) -> Result<Box<RawValue>> {
+    const MAX_PAGES: usize = 30;
+    let mut ts = String::from("now");
+    let mut prev_ts_used: Option<String> = None;
+    let mut pages: Vec<Value> = Vec::new();
+
+    for _ in 0..MAX_PAGES {
+        let url = format!("{UPSTREAM}/event/v1/tracks/{slug}?ts={ts}");
+        let res = client
+            .get(&url)
+            .send()
+            .await
+            .with_context(|| format!("requesting {url}"))?;
+        let status = res.status();
+        let text = res
+            .text()
+            .await
+            .with_context(|| format!("reading body of {url}"))?;
+        if !status.is_success() {
+            anyhow::bail!(
+                "upstream {url} returned {status}: {}",
+                &text[..text.len().min(200)]
+            );
+        }
+        let v: Value = serde_json::from_str(&text)
+            .with_context(|| format!("parsing json from {url}"))?;
+        let data = v.get("data").cloned().unwrap_or(v);
+
+        let prev = data.get("previous_page_ts").and_then(|p| {
+            p.as_f64()
+                .map(|f| format!("{}", f as i64))
+                .or_else(|| p.as_i64().map(|i| i.to_string()))
+                .or_else(|| p.as_str().map(String::from))
+        });
+        pages.push(data);
+
+        match prev {
+            Some(p) if p != ts && prev_ts_used.as_deref() != Some(&p) => {
+                prev_ts_used = Some(ts);
+                ts = p;
+            }
+            _ => break,
+        }
+    }
+
+    // Merge: concatenate oldest page first so final track is time-ordered.
+    let mut merged: HashMap<String, Vec<Value>> = HashMap::new();
+    for page in pages.iter().rev() {
+        let Some(tracks) = page.get("tracks").and_then(|t| t.as_array()) else { continue };
+        for t in tracks {
+            let Some(pid) = t.get("participant_id").and_then(|p| p.as_str()) else { continue };
+            let Some(points) = t.get("track").and_then(|p| p.as_array()) else { continue };
+            merged
+                .entry(pid.to_string())
+                .or_default()
+                .extend(points.iter().cloned());
+        }
+    }
+
+    // Dedup overlapping page boundaries by first element (timestamp).
+    for track in merged.values_mut() {
+        track.sort_by(|a, b| {
+            let ta = a.get(0).and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let tb = b.get(0).and_then(|v| v.as_f64()).unwrap_or(0.0);
+            ta.partial_cmp(&tb).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        track.dedup_by(|a, b| {
+            let ta = a.get(0).and_then(|v| v.as_f64());
+            let tb = b.get(0).and_then(|v| v.as_f64());
+            ta.is_some() && ta == tb
+        });
+    }
+
+    let tracks_array: Vec<Value> = merged
+        .into_iter()
+        .map(|(pid, track)| serde_json::json!({ "participant_id": pid, "track": track }))
+        .collect();
+    let payload = serde_json::json!({ "tracks": tracks_array });
+    let raw = RawValue::from_string(serde_json::to_string(&payload)?)?;
+    Ok(raw)
+}
+
 async fn fetch_combined(client: &Client, slug: &str) -> Result<Snapshot> {
     let t = Instant::now();
     let body = format!(r#"{{"event":"{}"}}"#, slug.replace('"', ""));
 
     let info_url = format!("{UPSTREAM}/event/v1/{slug}/info");
     let participants_url = format!("{UPSTREAM}/event/v3/participants/{slug}");
-    let tracks_url = format!("{UPSTREAM}/event/v1/tracks/{slug}?ts=now");
     let geo_url = format!("{UPSTREAM}/event/geo/v3");
     let journals_url = format!("{UPSTREAM}/event/journals");
 
     let (info, participants, tracks, geo, journals) = tokio::try_join!(
         fetch_raw(client, reqwest::Method::GET, &info_url, None),
         fetch_raw(client, reqwest::Method::GET, &participants_url, None),
-        fetch_raw(client, reqwest::Method::GET, &tracks_url, None),
+        fetch_tracks_paginated(client, slug),
         fetch_raw(client, reqwest::Method::POST, &geo_url, Some(&body)),
         fetch_raw(client, reqwest::Method::POST, &journals_url, Some(&body)),
     )?;

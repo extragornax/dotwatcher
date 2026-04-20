@@ -6,6 +6,10 @@ A fast, self-hosted viewer for public [madcap.cc](https://app.madcap.cc) event p
 
 Not affiliated with madcap.cc. Reads only their public read-only API.
 
+See [`CHANGELOG.md`](CHANGELOG.md) for per-iteration history. This README
+describes the app as it stands today, including everything currently under
+`## [Unreleased]`.
+
 ---
 
 ## Why
@@ -55,11 +59,16 @@ Nothing exotic.
              - Leaflet map (map tab)
 ```
 
-### Server (`src/main.rs`, ~290 lines)
+### Server (`src/main.rs` + `src/lib.rs`)
 
-- **Parallel fan-out.** `tokio::try_join!` fires five upstream HTTP/2 calls
+- **Parallel fan-out.** `tokio::try_join!` fires five upstream calls
   concurrently (`info`, `participants`, `tracks`, `geo`, `journals`) and unwraps
   each `{"status":"ok","data":…}` envelope.
+- **Paginated tracks.** The upstream `tracks` endpoint serves one 24-hour window
+  per call and links older pages via `previous_page_ts`. `fetch_tracks_paginated`
+  walks those cursors up to 30 pages, merges per participant, sorts by timestamp
+  and dedups page-boundary overlaps. The rest of the pipeline sees a single
+  `tracks` object containing the full event history.
 - **One combined JSON.** The server merges everything into one object with
   `serde_json::value::RawValue` so inner payloads are never re-parsed —
   strings flow straight through.
@@ -79,26 +88,108 @@ Nothing exotic.
   pre-compressed buffer.
 - **Introspection headers.** `x-upstream-ms`, `x-cache-age-ms`, `x-cache-stale`
   so the frontend can display live cache freshness.
+- **Benchmark.** `cargo bench --bench merge_tracks` exercises
+  `merge_track_pages` (pure CPU work from pagination) at three realistic sizes.
 
 ### Frontend (`src/index.html`, embedded via `include_str!`)
 
 Single static page, no build step. Fetches `/api/event/:slug` once, parses it,
-renders two tabs:
+renders a multi-tab UI with rich state restored from the URL.
 
-- **List tab.** Sidebar leaderboard (rank, name, bib, distance, speed, last
-  ping, sleep state) + detail pane with per-rider CP splits, status stats, and
-  last-known position.
-- **Map tab.** Leaflet on CARTO dark tiles (no API key), lazy-initialized on
-  first open:
-  - route polylines parsed from `geo.routes[].geojson`
-  - checkpoint badges from `geo.cps`
-  - one marker per rider at the last point of their `tracks.tracks[i].track`
-  - marker color by `overall_rank` (red ≤10, amber ≤50, green 51+), dimmed if
-    sleeping, dashed if no ping in 15 min
-  - popup with stats + "open details →" that jumps to the list tab
-  - client-side rider search that flies to and opens the popup
+#### Home page (`/`)
+Grid of event cards with filters (**Live / Upcoming / Past / All**), a search
+box, live rider counts, and banner images. Cards link to `/event/:slug`.
 
-Full page refresh every 30 s (same cadence as the server's upstream refresh).
+#### Event page (`/event/:slug`)
+
+- **Three tabs** in the header — **List / Map / Feed** — with `ℹ` (event info
+  & sponsors drawer) and `🔔` (browser notifications) controls.
+- **URL state** — `?tab=`, `?p=<participant>`, `?cat=`, `?fav=1` are written via
+  `history.replaceState` so any moment can be shared as a link.
+- **UTC-aware time display.** Upstream timestamps are naive ISO strings but
+  actually UTC; the app normalizes them and localizes at render time.
+
+##### List tab
+
+- Leaderboard sidebar with rank, name, bib, distance, speed, last-ping, sleep
+  state, and **cactus delta** (time / km vs the virtual pacer — green ahead,
+  red behind).
+- Category filter pills (e.g. `F` / `H` / `M` on desertus-bikus-26) —
+  selecting a category re-ranks the board by per-category rank.
+- Search by name / nickname / bib.
+- **★ favourites** per event (localStorage, per-slug). Favourites pin to the
+  top of the board. `★ only` toggle collapses the board to favourites.
+- **Detail pane** for the selected rider:
+  - Headline stats (distance, speed, distance-to-next-CP, ranks, last ping,
+    battery, status).
+  - Inline-SVG **elevation** and **speed** sparklines across the whole track.
+  - **Rest & movement timeline** — orange blocks on a green bar marking
+    stretches where `speed ≤ 1.5 km/h` for ≥ 20 min, with totals and longest
+    block.
+  - **Segments** table — CP-to-CP split times, the rider's rank for each leg
+    (across everyone who completed it) and the gap to the fastest.
+  - Full **Checkpoints** table with per-CP cumulative rank + arrival time.
+  - Last known position + one-click Google Maps link.
+
+##### Map tab
+
+Leaflet, lazy-initialized on first open:
+
+- **6 themes** (dropdown): Dark (Carto, default), Light, Voyager, OSM,
+  Satellite (Esri), Topo (OpenTopoMap). Persisted in localStorage.
+- **3 marker label styles** (dropdown): coloured dots, bib pills, or name
+  pills. Persisted in localStorage.
+- Route polylines from `geo.routes[].geojson`; the upstream's "Cactus" route
+  is recoloured from pure black to a pale sand that actually reads on dark
+  tiles. Checkpoint badges from `geo.cps`.
+- One marker per rider at the last point of their `tracks[].track`. Colour by
+  `overall_rank` (red ≤ 10, amber ≤ 50, green 51+), dimmed if sleeping, dashed
+  if no ping in 15 min, gold ring if favourited.
+- **Trace polylines** for the selected rider (bright) and each favourite
+  (dim), coloured by rank. `traces` toggle hides them all; `★ only` toggle
+  also filters the marker set.
+- **Virtual 🌵 Cactus pacer** — a marker interpolated along the Cactus route
+  at `(now − start) / (end − start)` × total distance, updating every 60 s.
+  Popup shows % and km.
+- **Time scrubber** (bottom-centre) — range slider over `[event start, now]`,
+  play / pause, 5 playback speeds (1 s = 1 min / 5 min / **20 min (default)** /
+  1 h / 6 h), `live` button. Scrubbing drives markers, traces, and the cactus
+  via binary search on each track; rAF-throttled.
+- Client-side search that flies to and opens a rider's popup.
+
+##### Feed tab
+
+Global reverse-chronological timeline of journal entries. `PICTURE` entries
+render with a 140×100 thumbnail (click for the full image); `SLEEP` entries
+show rider + location. Filter pills: **All / Photos / Sleeps / ★ favourites**.
+Clicking a rider's name opens their detail in the List tab.
+
+##### Event info drawer (`ℹ`)
+
+Slides in from the right with the event description, route / distance /
+surface, start and end dates, rankings, website + Instagram links, emergency
+/ organiser / technical phone numbers (as `tel:` links), and a 2-column grid
+of sponsor logos. Closes with ✕, backdrop click, or Escape.
+
+##### Browser notifications (`🔔`, tab-open only)
+
+Permission-gated. On each 30 s refresh, diffs the new snapshot against the
+previous one and fires desktop notifications **only for favourites**:
+
+- CP crossed (distinguishes `reached CPn` from `finished at <name>`).
+- Caught by the cactus (ahead → behind).
+- Passed the cactus (behind → ahead).
+- Rank gain of ≥ 10 places in a single refresh.
+- Battery dropped from > 20 % to ≤ 20 %.
+- Long stop of ≥ 45 min, fired once while the rider's latest fix is still
+  inside the rest block.
+- New `PICTURE` journal entry, with the photo as the notification icon.
+
+Each trigger uses a unique `tag` so the browser replaces rather than stacks
+same-event messages. First load seeds the snapshot without firing.
+
+Full page data refresh every 30 s (same cadence as the server's upstream
+refresh).
 
 ---
 

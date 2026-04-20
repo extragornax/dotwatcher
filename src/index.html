@@ -1486,6 +1486,70 @@
     `;
   }
 
+  function renderSegments(p) {
+    const cps = ((state.geo && state.geo.cps) || []).slice().sort((a, b) => a.order - b.order);
+    if (cps.length < 2) return '';
+    const parts = state.participants || [];
+
+    // Per-segment: sorted [{pid, dur}] for everyone who completed it
+    const segStats = new Map();
+    for (let i = 1; i < cps.length; i++) {
+      const fromOrder = cps[i - 1].order;
+      const toOrder = cps[i].order;
+      const durs = [];
+      for (const pp of parts) {
+        const cr = pp.cp_rank;
+        if (!Array.isArray(cr)) continue;
+        const a = cr[fromOrder], b = cr[toOrder];
+        if (!a || !b) continue;
+        const t1 = utcMs(a[1]);
+        const t2 = utcMs(b[1]);
+        if (t1 == null || t2 == null || t2 <= t1) continue;
+        durs.push({ pid: pp.id, dur: (t2 - t1) / 1000 });
+      }
+      durs.sort((a, b) => a.dur - b.dur);
+      segStats.set(i, durs);
+    }
+
+    const rows = [];
+    for (let i = 1; i < cps.length; i++) {
+      const from = cps[i - 1], to = cps[i];
+      const cr = p.cp_rank;
+      const a = Array.isArray(cr) ? cr[from.order] : null;
+      const b = Array.isArray(cr) ? cr[to.order] : null;
+      let durCell = '—';
+      let rankCell = '—';
+      if (a && b) {
+        const t1 = utcMs(a[1]);
+        const t2 = utcMs(b[1]);
+        if (t1 != null && t2 != null && t2 > t1) {
+          const d = (t2 - t1) / 1000;
+          durCell = fmtDur(d);
+          const stats = segStats.get(i) || [];
+          const idx = stats.findIndex(x => x.pid === p.id);
+          if (idx >= 0 && stats.length) {
+            const gap = d - stats[0].dur;
+            rankCell = `#${idx + 1} / ${stats.length}${idx > 0 ? ` · +${fmtDur(gap)}` : ''}`;
+          }
+        }
+      }
+      rows.push(`<tr>
+        <td>${from.order} → ${to.order}</td>
+        <td><b>${escape(from.short_name || '')}</b> → <b>${escape(to.short_name || '')}</b></td>
+        <td>${durCell}</td>
+        <td class="n">${rankCell}</td>
+      </tr>`);
+    }
+
+    return `
+      <h3 style="margin:18px 0 6px">Segments</h3>
+      <table>
+        <thead><tr><th>#</th><th>From → To</th><th>Time</th><th class="n">Segment rank</th></tr></thead>
+        <tbody>${rows.join('')}</tbody>
+      </table>
+    `;
+  }
+
   function renderProfiles(p) {
     const track = ((state.tracks && state.tracks.tracks) || []).find(t => t.participant_id === p.id);
     if (!track || !track.track || track.track.length < 2) return '';
@@ -1533,6 +1597,7 @@
       </div>
       ${renderProfiles(p)}
       ${renderRestTimeline(p)}
+      ${renderSegments(p)}
       <h3 style="margin:18px 0 6px">Checkpoints</h3>
       <table>
         <thead><tr><th>#</th><th>Name</th><th class="n">Rank</th><th>When</th></tr></thead>

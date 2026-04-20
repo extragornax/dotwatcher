@@ -104,18 +104,39 @@ Full page refresh every 30 s (same cadence as the server's upstream refresh).
 
 ## Running
 
+### Cargo (local dev)
+
 ```bash
 cargo run --release
 # then open http://127.0.0.1:8080/event/desertus-bikus-26
 ```
 
-Config via env vars:
+### Docker Compose
+
+```bash
+docker compose up -d --build
+# then open http://127.0.0.1:8080/event/desertus-bikus-26
+```
+
+Override the host port or warm slug inline:
+
+```bash
+HOST_PORT=9000 MADCAP_WARM_SLUG=some-other-event docker compose up -d
+```
+
+The image is a multi-stage build (`rust:1-bookworm` → `debian:bookworm-slim`),
+runs as a non-root user under `tini`, and drops all capabilities. Healthcheck
+hits `/` every 30 s. First build takes ~90 s (deps cached layer), incremental
+rebuilds only recompile `src/`.
+
+### Config (env vars, both modes)
 
 | var                | default               | meaning                                      |
 | ------------------ | --------------------- | -------------------------------------------- |
 | `PORT`             | `8080`                | bind port                                    |
 | `MADCAP_WARM_SLUG` | `desertus-bikus-26`   | slug to pre-warm on boot; set empty to skip  |
 | `RUST_LOG`         | `madcap_fast=info`    | standard `tracing_subscriber` filter         |
+| `HOST_PORT`        | `8080`                | compose only: host-side port mapping         |
 
 The server exposes:
 

@@ -1,0 +1,7 @@
+target
+.git
+.idea
+README.md
+*.md
+!src/index.html
+/tmp

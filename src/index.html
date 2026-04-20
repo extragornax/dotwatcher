@@ -57,6 +57,14 @@
   .marker-cluster-medium div { background: rgba(210, 153, 34, 0.9); }
   .marker-cluster-large { background: rgba(248, 81, 73, 0.22); border-color: rgba(248, 81, 73, 0.6); }
   .marker-cluster-large div { background: rgba(248, 81, 73, 0.9); }
+  .elev-banner { position: absolute; top: 0; left: 0; right: 0; z-index: 490; background: rgba(20,24,29,0.82); backdrop-filter: blur(4px); border-bottom: 1px solid var(--border); padding: 4px 8px; display: none; pointer-events: none; }
+  .elev-banner.show { display: block; }
+  .elev-banner svg { width: 100%; height: 70px; display: block; }
+  .elev-banner .area { fill: var(--accent); opacity: 0.18; }
+  .elev-banner .line { fill: none; stroke: var(--accent); stroke-width: 1; opacity: 0.8; }
+  .elev-banner .cursor { stroke: #f1c40f; stroke-width: 2; opacity: 0.9; }
+  .elev-banner .elev-meta { position: absolute; top: 4px; right: 10px; font-size: 11px; color: var(--mute); font-variant-numeric: tabular-nums; pointer-events: none; line-height: 1.3; }
+  #view-map.with-elev .map-overlay { top: 92px; }
   .plabel { display: inline-flex; align-items: center; gap: 5px; background: rgba(20,24,29,0.88); color: var(--fg); border: 1.5px solid rgba(255,255,255,0.85); border-radius: 12px; padding: 2px 8px 2px 4px; font-size: 11px; font-weight: 600; white-space: nowrap; box-shadow: 0 1px 3px rgba(0,0,0,0.6); line-height: 1; transition: transform .12s ease; }
   .plabel .pdot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; border: 1px solid rgba(0,0,0,0.5); }
   .plabel.selected { transform: scale(1.1); border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent), 0 0 10px var(--accent); }
@@ -278,6 +286,7 @@
 
 <section id="view-map" class="view">
   <div id="map"></div>
+  <div id="elev-banner" class="elev-banner"></div>
   <div class="map-scrubber" id="map-scrubber">
     <button id="scrub-play" class="map-btn" type="button" title="play / pause">▶</button>
     <select id="scrub-speed" title="playback speed">
@@ -300,6 +309,7 @@
       <option value="name">names</option>
     </select>
     <button id="map-traces" class="map-btn on" type="button" title="toggle traces" aria-pressed="true">traces</button>
+    <button id="map-elev" class="map-btn on" type="button" title="toggle course elevation banner" aria-pressed="true">elev</button>
     <button id="map-favonly" class="map-btn fav" type="button" title="favorites only" aria-pressed="false">★ only</button>
     <span id="mapcount" style="color: var(--mute)">—</span>
   </div>
@@ -380,6 +390,10 @@
 
   const TRACES_KEY = 'madcap_map_traces';
   let showTraces = localStorage.getItem(TRACES_KEY) !== '0';
+
+  const ELEV_KEY = 'madcap_map_elev';
+  let showElev = localStorage.getItem(ELEV_KEY) !== '0';
+  let courseProfileCache = { tracks: null, profile: null, totalKm: 0 };
 
   const LABELS_KEY = 'madcap_map_labels';
   const VALID_LABELS = new Set(['dot', 'bib', 'name']);
@@ -831,19 +845,21 @@
 
   function ensureMap() {
     if (map) return;
-    map = L.map('map', { preferCanvas: true, zoomControl: true, attributionControl: true }).setView([43, -1], 6);
+    map = L.map('map', { preferCanvas: true, zoomControl: true, attributionControl: true, maxZoom: 19 }).setView([43, -1], 6);
     mapLayers = {
       tile: null,
       routes: L.layerGroup().addTo(map),
       cps: L.layerGroup().addTo(map),
       traces: L.layerGroup().addTo(map),
-      participants: L.markerClusterGroup({
-        disableClusteringAtZoom: 11,
-        spiderfyOnMaxZoom: false,
-        showCoverageOnHover: false,
-        chunkedLoading: true,
-        maxClusterRadius: 55,
-      }).addTo(map),
+      participants: (typeof L.markerClusterGroup === 'function'
+        ? L.markerClusterGroup({
+            disableClusteringAtZoom: 11,
+            spiderfyOnMaxZoom: false,
+            showCoverageOnHover: false,
+            chunkedLoading: true,
+            maxClusterRadius: 55,
+          })
+        : L.layerGroup()).addTo(map),
       participantMarkers: new Map(),
       didFit: false,
     };
@@ -938,8 +954,13 @@
       ? `${seen.size} favorites on map`
       : `${seen.size} / ${state.participants.length} on map`;
 
+    if (typeof mapLayers.participants.refreshClusters === 'function') {
+      mapLayers.participants.refreshClusters();
+    }
+
     renderTraces();
     renderCactus();
+    renderCourseElev();
     if (!cactusTimer) cactusTimer = setInterval(renderCactus, 60000);
     updateScrubberUI();
 
@@ -1030,6 +1051,95 @@
       distance: target,
       total: cp.total,
     };
+  }
+
+  function computeCourseProfile() {
+    if (!state || !state.tracks) return null;
+    if (courseProfileCache.tracks === state.tracks && courseProfileCache.profile) return courseProfileCache.profile;
+    const tracks = state.tracks.tracks || [];
+    const parts = state.participants || [];
+    let bestId = null, bestDist = 0;
+    for (const p of parts) {
+      if ((p.distance || 0) > bestDist) { bestDist = p.distance; bestId = p.id; }
+    }
+    if (!bestId) return null;
+    const tr = tracks.find(t => t.participant_id === bestId);
+    if (!tr || !tr.track || tr.track.length < 2) return null;
+    const pts = tr.track;
+    let cum = 0;
+    const raw = [{ km: 0, elev: pts[0][3] }];
+    for (let i = 1; i < pts.length; i++) {
+      cum += haversineKm([pts[i - 1][1], pts[i - 1][2]], [pts[i][1], pts[i][2]]);
+      raw.push({ km: cum, elev: pts[i][3] });
+    }
+    const N = 600;
+    let profile;
+    if (raw.length <= N) profile = raw;
+    else {
+      profile = new Array(N);
+      const step = raw.length / N;
+      for (let i = 0; i < N; i++) profile[i] = raw[Math.min(raw.length - 1, Math.floor(i * step))];
+    }
+    courseProfileCache = { tracks: state.tracks, profile, totalKm: cum };
+    return profile;
+  }
+
+  function renderCourseElev() {
+    const banner = document.getElementById('elev-banner');
+    const viewMap = document.getElementById('view-map');
+    if (!banner) return;
+    if (!showElev) {
+      banner.classList.remove('show');
+      viewMap.classList.remove('with-elev');
+      banner.innerHTML = '';
+      return;
+    }
+    const profile = computeCourseProfile();
+    if (!profile || profile.length < 2) {
+      banner.classList.remove('show');
+      viewMap.classList.remove('with-elev');
+      banner.innerHTML = '';
+      return;
+    }
+    banner.classList.add('show');
+    viewMap.classList.add('with-elev');
+    const W = 1000, H = 70;
+    const totalKm = courseProfileCache.totalKm || profile[profile.length - 1].km;
+    let minE = Infinity, maxE = -Infinity;
+    for (const p of profile) {
+      if (p.elev == null || isNaN(p.elev)) continue;
+      if (p.elev < minE) minE = p.elev;
+      if (p.elev > maxE) maxE = p.elev;
+    }
+    if (!isFinite(minE)) { banner.innerHTML = ''; return; }
+    const spanE = Math.max(1, maxE - minE);
+    const xOf = km => (km / Math.max(1, totalKm)) * W;
+    const yOf = e => H - ((e - minE) / spanE) * (H - 6) - 3;
+    let d = '';
+    for (const p of profile) {
+      if (p.elev == null || isNaN(p.elev)) continue;
+      d += (d ? 'L' : 'M') + xOf(p.km).toFixed(1) + ' ' + yOf(p.elev).toFixed(1);
+    }
+    const area = d + ` L${W} ${H} L0 ${H} Z`;
+    const cp = cactusAt(currentPlaybackTime());
+    const cx = cp ? xOf(cp.km) : null;
+    banner.innerHTML = `
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+        <path class="area" d="${area}"/>
+        <path class="line" d="${d}"/>
+        ${cx != null ? `<line class="cursor" x1="${cx.toFixed(1)}" y1="0" x2="${cx.toFixed(1)}" y2="${H}"/>` : ''}
+      </svg>
+      <div class="elev-meta">${minE.toFixed(0)}–${maxE.toFixed(0)} m · ${totalKm.toFixed(0)} km${cp ? ` · 🌵 ${cp.km.toFixed(0)} km` : ''}</div>
+    `;
+  }
+
+  function setShowElev(v) {
+    showElev = !!v;
+    localStorage.setItem(ELEV_KEY, showElev ? '1' : '0');
+    const b = document.getElementById('map-elev');
+    if (b) { b.classList.toggle('on', showElev); b.setAttribute('aria-pressed', showElev); }
+    renderCourseElev();
+    if (map) setTimeout(() => map.invalidateSize(), 0);
   }
 
   function renderCactus() {
@@ -1767,6 +1877,7 @@
   document.getElementById('favonly').addEventListener('click', () => setFavOnly(!favOnly));
   document.getElementById('map-favonly').addEventListener('click', () => setFavOnly(!favOnly));
   document.getElementById('map-traces').addEventListener('click', () => setShowTraces(!showTraces));
+  document.getElementById('map-elev').addEventListener('click', () => setShowElev(!showElev));
 
   // -------- home view ----------
   function parseISO(s) { return parseUtc(s); }
@@ -1900,6 +2011,8 @@
     });
     const tracesBtn = document.getElementById('map-traces');
     if (tracesBtn) { tracesBtn.classList.toggle('on', showTraces); tracesBtn.setAttribute('aria-pressed', showTraces); }
+    const elevBtn = document.getElementById('map-elev');
+    if (elevBtn) { elevBtn.classList.toggle('on', showElev); elevBtn.setAttribute('aria-pressed', showElev); }
     load().then(() => {
       if (urlState.pid) {
         const p = state.participants.find(x => x.id === urlState.pid);

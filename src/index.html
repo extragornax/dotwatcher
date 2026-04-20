@@ -167,6 +167,19 @@
   .profile.timeline .move { fill: #3fb950; opacity: 0.22; }
   .profile.timeline .rest { fill: #d29922; opacity: 0.85; }
   .profile.timeline .nowline { stroke: var(--accent); stroke-width: 1; opacity: 0.8; }
+  #view-feed { padding: 18px 22px 40px; max-width: 900px; margin: 0 auto; overflow-y: auto; max-height: calc(100vh - 52px); }
+  .feed-head { display: flex; gap: 14px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+  .feed-list { display: grid; gap: 10px; }
+  .feed-entry { display: grid; grid-template-columns: 140px 1fr auto; gap: 14px; align-items: center; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+  .feed-entry.no-thumb { grid-template-columns: 1fr auto; }
+  .feed-entry .thumb { width: 140px; height: 100px; object-fit: cover; border-radius: 6px; background: #000; display: block; }
+  .feed-entry .who-link { color: var(--fg); font-weight: 600; cursor: pointer; text-decoration: none; border-bottom: 1px dotted transparent; }
+  .feed-entry .who-link:hover { color: var(--accent); border-bottom-color: var(--accent); }
+  .feed-entry .meta { color: var(--mute); font-size: 12px; margin-top: 4px; }
+  .feed-entry .meta a { color: inherit; text-decoration: underline dotted; }
+  .feed-entry .type-badge { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 2px 8px; border-radius: 4px; background: var(--panel-2); color: var(--mute); border: 1px solid var(--border); margin-left: 8px; vertical-align: middle; }
+  .feed-entry .type-badge.picture { color: var(--accent); border-color: #5a3a2a; background: #2a1f16; }
+  .feed-entry .time { color: var(--mute); font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; min-width: 90px; }
   @media (max-width: 880px) {
     #view-list.active { grid-template-columns: 1fr; }
     #sidebar { max-height: 55vh; border-right: none; border-bottom: 1px solid var(--border); }
@@ -187,6 +200,7 @@
     <button id="notif-toggle" class="tab notif" type="button" title="notifications" aria-pressed="false">🔔</button>
     <button class="tab active" data-tab="list" role="tab" aria-selected="true">List</button>
     <button class="tab" data-tab="map" role="tab" aria-selected="false">Map</button>
+    <button class="tab" data-tab="feed" role="tab" aria-selected="false">Feed</button>
   </div>
 </header>
 
@@ -217,6 +231,19 @@
   <section id="detail">
     <div id="body">Loading…</div>
   </section>
+</section>
+
+<section id="view-feed" class="view">
+  <div class="feed-head">
+    <span id="feed-count" class="home-count">—</span>
+    <div class="pill-group" role="tablist">
+      <button class="pill active" data-ffilter="all">All</button>
+      <button class="pill" data-ffilter="PICTURE">Photos</button>
+      <button class="pill" data-ffilter="SLEEP">Sleeps</button>
+      <button class="pill" data-ffilter="fav">★ favorites</button>
+    </div>
+  </div>
+  <div id="feed-list" class="feed-list"></div>
 </section>
 
 <section id="view-map" class="view">
@@ -326,6 +353,10 @@
     && localStorage.getItem(NOTIF_ENABLED_KEY) === '1';
   let prevParticipants = null;
   let prevCactusKm = null;
+  let prevJournalIds = null;
+  const prevLongStopKey = new Map();
+
+  let feedFilter = 'all';
 
   let cactusPath = null;
   let cactusMarker = null;
@@ -414,9 +445,20 @@
   function runNotificationChecks() {
     if (!notifEnabled || !state || !state.participants) return;
     const curMap = new Map(state.participants.map(p => [p.id, p]));
-    if (!prevParticipants) { prevParticipants = curMap; return; }
+    const entries = (state.journals && state.journals.entries) || [];
+    const curJournalIds = new Set(entries.map(e => `${e.participant_id}:${e.timestamp}:${e.type}`));
     const cd = cactusAt(Date.now());
     const cps = (state.geo && state.geo.cps) || [];
+    const tracks = (state.tracks && state.tracks.tracks) || [];
+    const trackById = new Map(tracks.map(t => [t.participant_id, t]));
+
+    if (!prevParticipants) {
+      prevParticipants = curMap;
+      prevJournalIds = curJournalIds;
+      prevCactusKm = cd ? cd.km : null;
+      return;
+    }
+
     for (const id of favs) {
       const prev = prevParticipants.get(id);
       const cur = curMap.get(id);
@@ -429,7 +471,8 @@
           if (!prev.cp_rank[i] && cur.cp_rank[i]) {
             const cp = cps.find(c => c.order === i);
             const cpName = cp ? (cp.short_name || cp.name || `CP${i}`) : `CP${i}`;
-            fireNotif(`${name} reached ${cpName}`, {
+            const isFinish = cp && cp.cp_type === 'FINISH';
+            fireNotif(`${name} ${isFinish ? 'finished at' : 'reached'} ${cpName}`, {
               body: `rank #${cur.cp_rank[i][0]}${cur.distance != null ? ` · ${cur.distance.toFixed(0)} km` : ''}`,
               tag: `madcap-cp-${slug}-${id}-${i}`,
             });
@@ -437,14 +480,30 @@
         }
       }
 
-      // Caught by cactus (ahead → behind)
+      // Cactus crossings
       if (prev && cd && prev.distance != null && cur.distance != null && prevCactusKm != null) {
         const prevDelta = prev.distance - prevCactusKm;
         const curDelta = cur.distance - cd.km;
         if (prevDelta > 0 && curDelta <= 0) {
           fireNotif(`🌵 cactus caught ${name}`, {
             body: `now ${Math.abs(curDelta).toFixed(1)} km behind the pacer`,
-            tag: `madcap-cactus-${slug}-${id}`,
+            tag: `madcap-cactus-catch-${slug}-${id}`,
+          });
+        } else if (prevDelta <= 0 && curDelta > 0) {
+          fireNotif(`${name} passed the 🌵`, {
+            body: `now ${curDelta.toFixed(1)} km ahead of the pacer`,
+            tag: `madcap-cactus-pass-${slug}-${id}`,
+          });
+        }
+      }
+
+      // Rank gain ≥ 10 places
+      if (prev && prev.overall_rank != null && cur.overall_rank != null) {
+        const gained = prev.overall_rank - cur.overall_rank;
+        if (gained >= 10) {
+          fireNotif(`${name} gained ${gained} places`, {
+            body: `now #${cur.overall_rank} (was #${prev.overall_rank})`,
+            tag: `madcap-rank-${slug}-${id}`,
           });
         }
       }
@@ -457,15 +516,59 @@
           tag: `madcap-batt-${slug}-${id}`,
         });
       }
+
+      // Long active stop ≥ 45 min
+      const tr = trackById.get(id);
+      if (tr && tr.track && tr.track.length) {
+        const pts = tr.track;
+        const last = pts[pts.length - 1];
+        const { blocks } = computeRestBlocks(pts);
+        if (blocks.length) {
+          const cur_block = blocks[blocks.length - 1];
+          const stillResting = last[0] - cur_block.end < 300; // block reaches (near) the latest fix
+          const dur = cur_block.end - cur_block.start;
+          if (stillResting && dur >= 45 * 60) {
+            const key = `${cur_block.start}`;
+            if (prevLongStopKey.get(id) !== key) {
+              fireNotif(`${name} stopped for ${fmtDur(dur)}`, {
+                body: 'still paused',
+                tag: `madcap-stop-${slug}-${id}`,
+              });
+              prevLongStopKey.set(id, key);
+            }
+          } else if (!stillResting) {
+            prevLongStopKey.delete(id);
+          }
+        }
+      }
     }
+
+    // New PICTURE journal entries from favorites
+    for (const e of entries) {
+      if (e.type !== 'PICTURE') continue;
+      if (!favs.has(e.participant_id)) continue;
+      const sig = `${e.participant_id}:${e.timestamp}:${e.type}`;
+      if (prevJournalIds.has(sig)) continue;
+      const p = curMap.get(e.participant_id);
+      const rn = p ? `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'rider' : 'rider';
+      const url = (e.data && e.data.url) || undefined;
+      fireNotif(`${rn} posted a photo`, {
+        body: sinceText(e.timestamp),
+        icon: url,
+        tag: `madcap-pic-${slug}-${e.participant_id}-${e.timestamp}`,
+      });
+    }
+
     prevParticipants = curMap;
+    prevJournalIds = curJournalIds;
     prevCactusKm = cd ? cd.km : null;
   }
 
   function readUrlState() {
     const params = new URLSearchParams(location.search);
+    const tab = params.get('tab');
     return {
-      tab: params.get('tab') === 'map' ? 'map' : null,
+      tab: tab === 'map' || tab === 'feed' ? tab : null,
       pid: params.get('p') || null,
       cat: params.get('cat') || null,
       favOnly: params.get('fav') === '1',
@@ -475,7 +578,7 @@
   function writeUrlState() {
     if (mode !== 'event') return;
     const params = new URLSearchParams();
-    if (currentTab === 'map') params.set('tab', 'map');
+    if (currentTab === 'map' || currentTab === 'feed') params.set('tab', currentTab);
     if (selected) params.set('p', selected.id);
     if (catFilter) params.set('cat', catFilter);
     if (favOnly) params.set('fav', '1');
@@ -539,6 +642,7 @@
     if (selected) renderDetail(selected);
     else renderOverview();
     if (map) renderMap();
+    if (currentTab === 'feed') renderFeed();
     writeUrlState();
   }
 
@@ -948,7 +1052,7 @@
       favBtn.setAttribute('aria-pressed', favs.has(favBtn.dataset.id));
       return;
     }
-    const btn = ev.target.closest('.popup-actions button[data-action="detail"]');
+    const btn = ev.target.closest('[data-action="detail"]');
     if (!btn) return;
     const p = state.participants.find(x => x.id === btn.dataset.id);
     if (p) {
@@ -958,25 +1062,69 @@
     }
   });
 
+  function renderFeed() {
+    const root = document.getElementById('feed-list');
+    const count = document.getElementById('feed-count');
+    if (!root || !state) return;
+    const entries = (state.journals && state.journals.entries) || [];
+    const partsById = new Map(state.participants.map(p => [p.id, p]));
+    let list = entries.slice();
+    if (feedFilter === 'PICTURE' || feedFilter === 'SLEEP') {
+      list = list.filter(e => e.type === feedFilter);
+    } else if (feedFilter === 'fav') {
+      list = list.filter(e => favs.has(e.participant_id));
+    }
+    list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    count.textContent = `${list.length} / ${entries.length}`;
+    const frag = document.createDocumentFragment();
+    for (const e of list) {
+      const p = partsById.get(e.participant_id);
+      const name = p ? `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'unknown' : 'unknown';
+      const bib = p && p.bib ? `bib ${p.bib}` : '';
+      const url = (e.data && e.data.url) || '';
+      const isPic = e.type === 'PICTURE' && url;
+      const div = document.createElement('div');
+      div.className = 'feed-entry' + (isPic ? '' : ' no-thumb');
+      const thumb = isPic
+        ? `<a href="${escapeAttr(url)}" target="_blank" rel="noopener"><img class="thumb" src="${escapeAttr(url)}" loading="lazy" alt=""/></a>`
+        : '';
+      const rank = p && p.overall_rank != null ? ` · #${p.overall_rank}` : '';
+      const fav = favs.has(e.participant_id) ? ' <span style="color:#f1c40f">★</span>' : '';
+      div.innerHTML = `
+        ${thumb}
+        <div>
+          <a class="who-link" data-action="detail" data-id="${escape(e.participant_id)}">${escape(name)}</a>${fav}
+          <span class="type-badge ${e.type.toLowerCase()}">${escape(e.type)}</span>
+          <div class="meta">${escape(bib)}${rank} · ${sinceText(e.timestamp)} · <a href="https://www.google.com/maps?q=${e.latitude},${e.longitude}" target="_blank" rel="noopener">${e.latitude.toFixed(4)}, ${e.longitude.toFixed(4)}</a></div>
+        </div>
+        <div class="time">${fmtTime(e.timestamp)}</div>
+      `;
+      frag.appendChild(div);
+    }
+    root.replaceChildren(frag);
+  }
+
   function setTab(name) {
     if (currentTab === name) return;
     currentTab = name;
-    document.querySelectorAll('.tab').forEach(t => {
+    document.querySelectorAll('.tab[data-tab]').forEach(t => {
       const active = t.dataset.tab === name;
       t.classList.toggle('active', active);
       t.setAttribute('aria-selected', active ? 'true' : 'false');
     });
     document.getElementById('view-list').classList.toggle('active', name === 'list');
     document.getElementById('view-map').classList.toggle('active', name === 'map');
+    document.getElementById('view-feed').classList.toggle('active', name === 'feed');
     if (name === 'map') {
       ensureMap();
       // Leaflet needs a size recalc after the container becomes visible.
       setTimeout(() => { map.invalidateSize(); renderMap(); }, 0);
     }
+    if (name === 'feed') renderFeed();
     writeUrlState();
   }
 
-  document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => setTab(t.dataset.tab)));
+  document.querySelectorAll('.tab[data-tab]').forEach(t => t.addEventListener('click', () => setTab(t.dataset.tab)));
 
   {
     const sel = document.getElementById('map-theme');
@@ -1302,6 +1450,14 @@
     return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
+  document.querySelectorAll('[data-ffilter]').forEach(b => {
+    b.addEventListener('click', () => {
+      feedFilter = b.dataset.ffilter;
+      document.querySelectorAll('[data-ffilter]').forEach(x => x.classList.toggle('active', x === b));
+      renderFeed();
+    });
+  });
+
   document.getElementById('scrub-play').addEventListener('click', togglePlay);
   document.getElementById('scrub-live').addEventListener('click', () => {
     stopPlayback();
@@ -1470,7 +1626,7 @@
         const p = state.participants.find(x => x.id === urlState.pid);
         if (p) { selected = p; render(); }
       }
-      if (urlState.tab === 'map') setTab('map');
+      if (urlState.tab && urlState.tab !== 'list') setTab(urlState.tab);
       refreshTimer = setInterval(load, 30000);
     }).catch(e => {
       document.getElementById('body').innerHTML = `<div class="err">${escape(e.message)}</div>`;

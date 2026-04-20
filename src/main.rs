@@ -24,6 +24,7 @@ use tracing::{info, warn};
 const UPSTREAM: &str = "https://api.madcap.cc";
 const REFRESH_INTERVAL: Duration = Duration::from_secs(30);
 const STALE_AFTER: Duration = Duration::from_secs(120);
+const EVENTS_LIST_REFRESH: Duration = Duration::from_secs(300);
 
 #[derive(Clone)]
 struct Snapshot {
@@ -40,9 +41,14 @@ struct EventCache {
     slug: String,
 }
 
+struct EventsListCache {
+    snapshot: RwLock<Option<Snapshot>>,
+}
+
 struct AppState {
     client: Client,
     events: RwLock<HashMap<String, Arc<EventCache>>>,
+    events_list: Arc<EventsListCache>,
 }
 
 #[derive(Serialize)]
@@ -122,6 +128,10 @@ async fn fetch_combined(client: &Client, slug: &str) -> Result<Snapshot> {
     };
     let bytes = serde_json::to_vec(&combined)?;
 
+    snapshot_from_bytes(bytes, upstream_ms).await
+}
+
+async fn snapshot_from_bytes(bytes: Vec<u8>, upstream_ms: u64) -> Result<Snapshot> {
     let (br, gz) = tokio::task::spawn_blocking({
         let raw = bytes.clone();
         move || -> Result<(Vec<u8>, Vec<u8>)> {
@@ -152,6 +162,31 @@ async fn fetch_combined(client: &Client, slug: &str) -> Result<Snapshot> {
         fetched_at: Instant::now(),
         upstream_ms,
     })
+}
+
+async fn fetch_events_list(client: &Client) -> Result<Snapshot> {
+    let t = Instant::now();
+    let url = format!("{UPSTREAM}/v1/events/list");
+    let inner = fetch_raw(client, reqwest::Method::GET, &url, None).await?;
+    let upstream_ms = t.elapsed().as_millis() as u64;
+
+    // Unwrap the `{ "events": [...] }` envelope so the client just sees the array.
+    let parsed: Value = serde_json::from_str(inner.get())?;
+    let list = parsed
+        .get("events")
+        .cloned()
+        .unwrap_or(parsed);
+
+    let wrapper = serde_json::json!({
+        "fetched_at_unix": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0),
+        "upstream_ms": upstream_ms,
+        "events": list,
+    });
+    let bytes = serde_json::to_vec(&wrapper)?;
+    snapshot_from_bytes(bytes, upstream_ms).await
 }
 
 fn fnv1a(bytes: &[u8]) -> u64 {
@@ -204,6 +239,26 @@ fn spawn_refresher(client: Client, cache: Arc<EventCache>) {
     });
 }
 
+fn spawn_events_list_refresher(client: Client, cache: Arc<EventsListCache>) {
+    tokio::spawn(async move {
+        loop {
+            match fetch_events_list(&client).await {
+                Ok(snap) => {
+                    info!(
+                        body = snap.body.len(),
+                        body_br = snap.body_br.len(),
+                        upstream_ms = snap.upstream_ms,
+                        "events list refreshed"
+                    );
+                    *cache.snapshot.write().await = Some(snap);
+                }
+                Err(e) => warn!(error = %e, "events list refresh failed"),
+            }
+            tokio::time::sleep(EVENTS_LIST_REFRESH).await;
+        }
+    });
+}
+
 async fn combined_handler(
     State(state): State<Arc<AppState>>,
     Path(slug): Path<String>,
@@ -225,6 +280,28 @@ async fn combined_handler(
         tokio::time::sleep(Duration::from_millis(100)).await;
     };
 
+    serve_snapshot(snap, &headers, "public, max-age=15, stale-while-revalidate=60")
+}
+
+async fn events_list_handler(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Response {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let snap = loop {
+        if let Some(s) = state.events_list.snapshot.read().await.clone() {
+            break s;
+        }
+        if Instant::now() > deadline {
+            return (StatusCode::GATEWAY_TIMEOUT, "cold cache, upstream slow").into_response();
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    };
+
+    serve_snapshot(snap, &headers, "public, max-age=60, stale-while-revalidate=300")
+}
+
+fn serve_snapshot(snap: Snapshot, headers: &HeaderMap, cache_control: &'static str) -> Response {
     let stale = snap.fetched_at.elapsed() > STALE_AFTER;
 
     let if_none_match = headers
@@ -249,10 +326,7 @@ async fn combined_handler(
         HeaderValue::from_static("application/json; charset=utf-8"),
     );
     h.insert(header::ETAG, HeaderValue::from_str(&snap.etag).unwrap());
-    h.insert(
-        header::CACHE_CONTROL,
-        HeaderValue::from_static("public, max-age=15, stale-while-revalidate=60"),
-    );
+    h.insert(header::CACHE_CONTROL, HeaderValue::from_static(cache_control));
     h.insert(header::VARY, HeaderValue::from_static("Accept-Encoding"));
     h.insert(
         "x-cache-age-ms",
@@ -316,13 +390,19 @@ async fn main() -> Result<()> {
         .user_agent("madcap-fast/0.1")
         .build()?;
 
+    let events_list = Arc::new(EventsListCache {
+        snapshot: RwLock::new(None),
+    });
+    spawn_events_list_refresher(client.clone(), events_list.clone());
+
     let state = Arc::new(AppState {
         client,
         events: RwLock::new(HashMap::new()),
+        events_list,
     });
 
     let warm_slug = std::env::var("MADCAP_WARM_SLUG").unwrap_or_else(|_| "desertus-bikus-26".into());
-    {
+    if !warm_slug.is_empty() {
         let s = state.clone();
         tokio::spawn(async move {
             let _ = ensure_cache(&s, &warm_slug).await;
@@ -333,6 +413,7 @@ async fn main() -> Result<()> {
         .route("/", get(index))
         .route("/event/{slug}", get(index))
         .route("/api/event/{slug}", get(combined_handler))
+        .route("/api/events", get(events_list_handler))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state);

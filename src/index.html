@@ -27,7 +27,7 @@
   header .sub b { color: var(--fg); }
   #sidebar { border-right: 1px solid var(--border); background: var(--panel); padding: 14px 0 14px 0; overflow: auto; max-height: calc(100vh - 52px); }
   #sidebar h2 { margin: 0 18px 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--mute); }
-  .p { padding: 8px 14px 8px 18px; border-bottom: 1px solid var(--border); display: grid; grid-template-columns: 36px 1fr auto; gap: 10px; align-items: center; cursor: pointer; }
+  .p { padding: 8px 14px 8px 18px; border-bottom: 1px solid var(--border); display: grid; grid-template-columns: 36px 1fr auto 26px; gap: 10px; align-items: center; cursor: pointer; }
   .p:hover { background: var(--panel-2); }
   .p.selected { background: #222a33; }
   .rank { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--accent); font-size: 15px; }
@@ -36,6 +36,12 @@
   .who .meta { color: var(--mute); font-size: 12px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
   .num { text-align: right; font-variant-numeric: tabular-nums; color: var(--mute); font-size: 12px; }
   .num b { color: var(--fg); font-weight: 600; font-size: 13px; }
+  .star { background: none; border: 0; color: var(--mute); cursor: pointer; font-size: 16px; padding: 2px 4px; line-height: 1; }
+  .star:hover, .star.on { color: #f1c40f; }
+  .fav-toggle { background: var(--panel-2); border: 1px solid var(--border); color: var(--mute); padding: 6px 10px; border-radius: 6px; cursor: pointer; font: inherit; }
+  .fav-toggle.on { background: #3a2a0a; border-color: #5a3a0a; color: #f1c40f; }
+  .fav-toggle:hover { color: #f1c40f; }
+  .pmark.fav { box-shadow: 0 0 0 2px #f1c40f, 0 0 12px rgba(241,196,15,0.65); }
   #detail { padding: 18px 22px; overflow: auto; max-height: calc(100vh - 52px); }
   #detail h2 { margin: 0 0 6px; font-size: 20px; }
   #detail .tagline { color: var(--mute); margin: 0 0 18px; }
@@ -56,7 +62,8 @@
   .dot.sleep { background: var(--mute); }
   .dot.stale { background: var(--warn); }
   input[type=search] { background: var(--panel-2); border: 1px solid var(--border); color: var(--fg); padding: 6px 10px; border-radius: 6px; width: 100%; font: inherit; }
-  .searchbar { padding: 0 18px 10px; }
+  .searchbar { padding: 0 18px 10px; display: flex; gap: 6px; align-items: center; }
+  .searchbar input[type=search] { flex: 1; }
   .err { color: var(--bad); padding: 14px; }
   a { color: var(--accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
@@ -98,6 +105,30 @@
   .popup-actions { margin-top: 6px; }
   .popup-actions button { background: var(--panel-2); border: 1px solid var(--border); color: var(--fg); padding: 3px 8px; border-radius: 4px; font: 12px inherit; cursor: pointer; }
   .popup-actions button:hover { background: #2a3139; }
+  /* Home view */
+  #view-home { padding: 22px 24px 40px; max-width: 1400px; margin: 0 auto; }
+  .home-head { display: flex; gap: 16px; align-items: baseline; margin-bottom: 18px; flex-wrap: wrap; }
+  .home-head input[type=search] { flex: 1; min-width: 200px; max-width: 380px; }
+  .pill-group { display: flex; gap: 6px; }
+  .pill { background: transparent; border: 1px solid var(--border); color: var(--mute); padding: 5px 12px; border-radius: 999px; font: inherit; font-size: 12px; cursor: pointer; }
+  .pill.active { background: var(--panel-2); color: var(--fg); border-color: #3d444d; }
+  .pill:hover { color: var(--fg); }
+  .home-count { color: var(--mute); font-size: 12px; }
+  .cards { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; text-decoration: none; color: inherit; transition: border-color .12s, transform .12s; }
+  .card:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .card .banner { width: 100%; height: 130px; background: #000 center/cover no-repeat; border-bottom: 1px solid var(--border); }
+  .card .body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 4px; }
+  .card .title { font-weight: 700; font-size: 15px; line-height: 1.3; }
+  .card .places { color: var(--mute); font-size: 12px; }
+  .card .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 6px; }
+  .card .chip { font-size: 11px; color: var(--mute); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; }
+  .card .chip.live { color: var(--bad); border-color: #5a2a2a; background: #2a1818; font-weight: 700; }
+  .card .chip.soon { color: var(--accent); border-color: #5a3a2a; }
+  .card .chip.past { color: var(--mute); }
+  .card .dates { color: var(--mute); font-size: 11px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  header .event-back { color: var(--mute); font-size: 12px; text-decoration: none; border: 1px solid var(--border); padding: 4px 10px; border-radius: 6px; }
+  header .event-back:hover { color: var(--fg); }
   @media (max-width: 880px) {
     #view-list.active { grid-template-columns: 1fr; }
     #sidebar { max-height: 55vh; border-right: none; border-bottom: 1px solid var(--border); }
@@ -107,22 +138,40 @@
 </head>
 <body>
 <header>
+  <a class="event-back" id="home-link" href="/" style="display:none">← All events</a>
   <h1>madcap<span style="color: var(--accent)">_fast</span></h1>
   <div class="sub">
-    event <b id="slug">—</b> ·
-    <span id="perf">loading…</span> ·
+    <span id="header-context">loading…</span> ·
+    <span id="perf">—</span> ·
     <span id="status" class="badge cold">cold</span>
   </div>
-  <div class="tabs" role="tablist">
+  <div class="tabs" role="tablist" id="tabs" style="display:none">
     <button class="tab active" data-tab="list" role="tab" aria-selected="true">List</button>
     <button class="tab" data-tab="map" role="tab" aria-selected="false">Map</button>
   </div>
 </header>
 
+<section id="view-home" class="view">
+  <div class="home-head">
+    <input id="homeq" type="search" placeholder="search events…" />
+    <div class="pill-group" role="tablist">
+      <button class="pill active" data-filter="live">Live</button>
+      <button class="pill" data-filter="upcoming">Upcoming</button>
+      <button class="pill" data-filter="past">Past</button>
+      <button class="pill" data-filter="all">All</button>
+    </div>
+    <span class="home-count" id="home-count">—</span>
+  </div>
+  <div class="cards" id="cards">Loading events…</div>
+</section>
+
 <section id="view-list" class="view active">
   <aside id="sidebar">
     <h2>Leaderboard</h2>
-    <div class="searchbar"><input id="q" type="search" placeholder="search name / bib…" /></div>
+    <div class="searchbar">
+      <input id="q" type="search" placeholder="search name / bib…" />
+      <button id="favonly" class="fav-toggle" type="button" title="show favorites only" aria-pressed="false">★</button>
+    </div>
     <div id="plist"></div>
   </aside>
   <section id="detail">
@@ -148,15 +197,36 @@
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script>
 (() => {
-  const slug = location.pathname.startsWith('/event/') ? decodeURIComponent(location.pathname.slice(7)) : 'desertus-bikus-26';
-  document.getElementById('slug').textContent = slug;
+  const mode = location.pathname.startsWith('/event/') ? 'event' : 'home';
+  const slug = mode === 'event' ? decodeURIComponent(location.pathname.slice(7)) : null;
 
   let state = null;
   let selected = null;
   let refreshTimer = null;
   let map = null;
-  let mapLayers = null; // { route, cps, participants (L.layerGroup), participantMarkers: Map<id, marker> }
+  let mapLayers = null;
   let currentTab = 'list';
+  let eventsList = null;
+  let homeFilter = 'live';
+
+  const favKey = slug ? `madcap_fav:${slug}` : null;
+  let favs = loadFavs();
+  let favOnly = false;
+  function loadFavs() {
+    if (!favKey) return new Set();
+    try { return new Set(JSON.parse(localStorage.getItem(favKey) || '[]')); }
+    catch { return new Set(); }
+  }
+  function saveFavs() {
+    if (!favKey) return;
+    localStorage.setItem(favKey, JSON.stringify([...favs]));
+  }
+  function toggleFav(id) {
+    if (!id) return;
+    if (favs.has(id)) favs.delete(id); else favs.add(id);
+    saveFavs();
+    render();
+  }
 
   const fmtKm = (m) => (m == null ? '—' : (+m).toFixed(1) + ' km');
   const fmtKmh = (v) => (v == null ? '—' : (+v).toFixed(1) + ' km/h');
@@ -289,7 +359,7 @@
       const isSelected = selected && selected.id === p.id;
       const color = rankColor(p.overall_rank);
       const stale = p.last_ping && (Date.now() - new Date(p.last_ping).getTime()) > 15 * 60000;
-      const cls = 'pmark' + (isSelected ? ' selected' : '') + (p.sleeping ? ' sleep' : '') + (stale ? ' stale' : '');
+      const cls = 'pmark' + (isSelected ? ' selected' : '') + (favs.has(p.id) ? ' fav' : '') + (p.sleeping ? ' sleep' : '') + (stale ? ' stale' : '');
       const html = `<div class="${cls}" style="background:${color}"></div>`;
       const icon = L.divIcon({ className: '', html, iconSize: [14, 14], iconAnchor: [7, 7] });
       if (existing) {
@@ -332,8 +402,9 @@
   function participantPopup(p) {
     const pt = lastPointOf(p.id);
     const when = pt ? sinceText(p.last_ping || new Date(Date.now() - 0).toISOString()) : '—';
+    const isFav = favs.has(p.id);
     return `
-      <div><b>#${p.overall_rank ?? '-'}</b> ${escape(p.first_name || '')} ${escape(p.last_name || '')}</div>
+      <div><b>#${p.overall_rank ?? '-'}</b> ${escape(p.first_name || '')} ${escape(p.last_name || '')} <button class="star ${isFav ? 'on' : ''}" data-action="fav" data-id="${escape(p.id)}" title="favorite" aria-pressed="${isFav}">★</button></div>
       <div style="color:var(--mute);font-size:12px;margin-top:2px">bib ${escape(p.bib || '-')} · ${escape((p.attributes && p.attributes.category) || '')}</div>
       <div style="margin-top:6px"><b>${fmtKm(p.distance)}</b> @ ${fmtKmh(p.speed)}</div>
       <div style="color:var(--mute);font-size:12px">to next CP: ${fmtKm(p.distance_to_next_cp)}</div>
@@ -344,6 +415,13 @@
 
   // Delegate popup button clicks so fresh popups just work.
   document.addEventListener('click', (ev) => {
+    const favBtn = ev.target.closest('[data-action="fav"]');
+    if (favBtn) {
+      toggleFav(favBtn.dataset.id);
+      favBtn.classList.toggle('on', favs.has(favBtn.dataset.id));
+      favBtn.setAttribute('aria-pressed', favs.has(favBtn.dataset.id));
+      return;
+    }
     const btn = ev.target.closest('.popup-actions button[data-action="detail"]');
     if (!btn) return;
     const p = state.participants.find(x => x.id === btn.dataset.id);
@@ -400,7 +478,13 @@
   function filteredParticipants() {
     const q = (document.getElementById('q').value || '').trim().toLowerCase();
     let list = state.participants.slice();
-    list.sort((a, b) => (a.overall_rank ?? 1e9) - (b.overall_rank ?? 1e9));
+    if (favOnly) list = list.filter(p => favs.has(p.id));
+    list.sort((a, b) => {
+      const fa = favs.has(a.id) ? 0 : 1;
+      const fb = favs.has(b.id) ? 0 : 1;
+      if (fa !== fb) return fa - fb;
+      return (a.overall_rank ?? 1e9) - (b.overall_rank ?? 1e9);
+    });
     if (!q) return list;
     return list.filter(p =>
       (p.first_name || '').toLowerCase().includes(q) ||
@@ -420,6 +504,7 @@
       div.dataset.id = p.id;
       const nick = p.nickname ? ` “${p.nickname}”` : '';
       const dotClass = p.sleeping ? 'sleep' : (p.last_ping && (Date.now() - new Date(p.last_ping)) > 15 * 60000 ? 'stale' : 'ok');
+      const isFav = favs.has(p.id);
       div.innerHTML = `
         <div class="rank">#${p.overall_rank ?? '-'}</div>
         <div class="who">
@@ -427,8 +512,13 @@
           <div class="meta">bib ${escape(p.bib || '-')} · ${escape((p.attributes && p.attributes.category) || '')} · ${sinceText(p.last_ping)}</div>
         </div>
         <div class="num"><b>${fmtKm(p.distance)}</b><br/>${fmtKmh(p.speed)}</div>
+        <button class="star ${isFav ? 'on' : ''}" data-action="fav" data-id="${escape(p.id)}" title="favorite" aria-pressed="${isFav}">★</button>
       `;
-      div.addEventListener('click', () => { selected = p; render(); });
+      div.addEventListener('click', (ev) => {
+        if (ev.target.closest('[data-action="fav"]')) return;
+        selected = p;
+        render();
+      });
       frag.appendChild(div);
     }
     root.replaceChildren(frag);
@@ -477,8 +567,9 @@
     const tracks = (state.tracks.tracks || []).find(t => t.participant_id === p.id);
     const body = document.getElementById('body');
     const lastPoint = tracks && tracks.track && tracks.track.length ? tracks.track[tracks.track.length - 1] : null;
+    const isFav = favs.has(p.id);
     body.innerHTML = `
-      <h2>#${p.overall_rank ?? '-'} · ${escape(p.first_name || '')} ${escape(p.last_name || '')} ${p.nickname ? '“' + escape(p.nickname) + '”' : ''}</h2>
+      <h2>#${p.overall_rank ?? '-'} · ${escape(p.first_name || '')} ${escape(p.last_name || '')} ${p.nickname ? '“' + escape(p.nickname) + '”' : ''} <button class="star ${isFav ? 'on' : ''}" data-action="fav" data-id="${escape(p.id)}" title="favorite" aria-pressed="${isFav}">★</button></h2>
       <p class="tagline">bib <b>${escape(p.bib || '-')}</b> · tracker ${escape(String(p.tracker || '-'))} · ${escape((p.attributes && p.attributes.category) || '')} · ${escape(p.country || '')}</p>
       <div class="grid">
         <div class="stat"><div class="label">Distance</div><div class="value">${fmtKm(p.distance)}</div></div>
@@ -518,12 +609,141 @@
   }
 
   document.getElementById('q').addEventListener('input', () => renderList());
-
-  load().then(() => {
-    refreshTimer = setInterval(load, 30000);
-  }).catch(e => {
-    document.getElementById('body').innerHTML = `<div class="err">${escape(e.message)}</div>`;
+  document.getElementById('favonly').addEventListener('click', () => {
+    favOnly = !favOnly;
+    const b = document.getElementById('favonly');
+    b.classList.toggle('on', favOnly);
+    b.setAttribute('aria-pressed', favOnly);
+    renderList();
   });
+
+  // -------- home view ----------
+  function parseISO(s) { if (!s) return null; const d = new Date(s); return isNaN(d) ? null : d; }
+
+  function classifyEvent(e) {
+    const now = Date.now();
+    const start = parseISO(e.start_date);
+    const end = parseISO(e.end_date);
+    if (start && end && now >= start.getTime() && now <= end.getTime()) return 'live';
+    if (start && now < start.getTime()) return 'upcoming';
+    return 'past';
+  }
+
+  function fmtRange(e) {
+    const s = parseISO(e.start_date);
+    const en = parseISO(e.end_date);
+    if (!s && !en) return '';
+    const opts = { month: 'short', day: '2-digit', year: '2-digit' };
+    return `${s ? s.toLocaleDateString(undefined, opts) : '?'} → ${en ? en.toLocaleDateString(undefined, opts) : '?'}`;
+  }
+
+  async function loadHome() {
+    const t0 = performance.now();
+    const res = await fetch('/api/events');
+    if (!res.ok) throw new Error('events endpoint ' + res.status);
+    const txt = await res.text();
+    const ttfb = performance.now() - t0;
+    eventsList = JSON.parse(txt).events || [];
+    document.getElementById('header-context').innerHTML = `<b>${eventsList.length}</b> events`;
+    document.getElementById('status').className = 'badge live';
+    document.getElementById('status').textContent = 'live';
+    document.getElementById('perf').innerHTML = `ttfb <b>${ttfb.toFixed(0)} ms</b> · payload <b>${(txt.length / 1024).toFixed(0)} KB</b> · upstream-ms <b>${res.headers.get('x-upstream-ms') || '?'}</b>`;
+    renderHome();
+  }
+
+  function renderHome() {
+    if (!eventsList) return;
+    const q = (document.getElementById('homeq').value || '').trim().toLowerCase();
+    let list = eventsList.slice();
+    for (const e of list) e._class = classifyEvent(e);
+    if (homeFilter !== 'all') list = list.filter(e => e._class === homeFilter);
+    if (q) list = list.filter(e =>
+      (e.name || '').toLowerCase().includes(q) ||
+      (e.slug || '').toLowerCase().includes(q) ||
+      (e.start_place_name || '').toLowerCase().includes(q) ||
+      (e.end_place_name || '').toLowerCase().includes(q)
+    );
+    // Sort: live first, then upcoming by start asc, then past by start desc
+    const rank = c => c === 'live' ? 0 : c === 'upcoming' ? 1 : 2;
+    list.sort((a, b) => {
+      const r = rank(a._class) - rank(b._class);
+      if (r !== 0) return r;
+      const sa = parseISO(a.start_date)?.getTime() ?? 0;
+      const sb = parseISO(b.start_date)?.getTime() ?? 0;
+      if (a._class === 'past') return sb - sa;
+      return sa - sb;
+    });
+
+    document.getElementById('home-count').textContent = `${list.length} / ${eventsList.length}`;
+    const cards = document.getElementById('cards');
+    if (!list.length) { cards.innerHTML = '<div style="color:var(--mute)">no events match</div>'; return; }
+    const frag = document.createDocumentFragment();
+    for (const e of list) {
+      const a = document.createElement('a');
+      a.className = 'card';
+      a.href = '/event/' + encodeURIComponent(e.slug);
+      const places = [e.start_place_name, e.end_place_name].filter(Boolean).join(' → ');
+      const chipClass = e._class === 'live' ? 'live' : e._class === 'upcoming' ? 'soon' : 'past';
+      const chipLabel = e._class === 'live' ? 'LIVE' : e._class === 'upcoming' ? 'UPCOMING' : 'PAST';
+      a.innerHTML = `
+        ${e.banner ? `<div class="banner" style="background-image:url('${escapeAttr(e.banner)}')"></div>` : ''}
+        <div class="body">
+          <div class="title">${escape(e.name || e.slug)}</div>
+          ${places ? `<div class="places">${escape(places)}</div>` : ''}
+          <div class="row">
+            <span class="chip ${chipClass}">${chipLabel}</span>
+            ${e.distance ? `<span class="chip">${escape(e.distance)}</span>` : ''}
+            ${e.surface ? `<span class="chip">${escape(e.surface)}</span>` : ''}
+            ${typeof e.participants === 'number' && e.participants > 0 ? `<span class="chip">${e.participants} riders</span>` : ''}
+          </div>
+          <div class="dates">${escape(fmtRange(e))}</div>
+        </div>
+      `;
+      frag.appendChild(a);
+    }
+    cards.replaceChildren(frag);
+  }
+
+  function escapeAttr(s) { return escape(s).replace(/\(/g, '%28').replace(/\)/g, '%29'); }
+
+  function showHomeView() {
+    document.getElementById('view-home').classList.add('active');
+    document.getElementById('view-list').classList.remove('active');
+    document.getElementById('view-map').classList.remove('active');
+    document.getElementById('tabs').style.display = 'none';
+    document.getElementById('home-link').style.display = 'none';
+  }
+
+  function showEventView() {
+    document.getElementById('view-home').classList.remove('active');
+    document.getElementById('view-list').classList.add('active');
+    document.getElementById('tabs').style.display = '';
+    document.getElementById('home-link').style.display = '';
+  }
+
+  // --------- boot ---------
+  if (mode === 'home') {
+    document.title = 'madcap_fast · events';
+    showHomeView();
+    document.getElementById('homeq').addEventListener('input', renderHome);
+    document.querySelectorAll('.pill').forEach(b => b.addEventListener('click', () => {
+      homeFilter = b.dataset.filter;
+      document.querySelectorAll('.pill').forEach(x => x.classList.toggle('active', x === b));
+      renderHome();
+    }));
+    loadHome().catch(e => {
+      document.getElementById('cards').innerHTML = `<div class="err">${escape(e.message)}</div>`;
+    });
+    refreshTimer = setInterval(() => loadHome().catch(() => {}), 60000);
+  } else {
+    document.getElementById('header-context').innerHTML = `event <b>${escape(slug)}</b>`;
+    showEventView();
+    load().then(() => {
+      refreshTimer = setInterval(load, 30000);
+    }).catch(e => {
+      document.getElementById('body').innerHTML = `<div class="err">${escape(e.message)}</div>`;
+    });
+  }
 })();
 </script>
 </body>

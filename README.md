@@ -140,9 +140,10 @@ rebuilds only recompile `src/`.
 
 The server exposes:
 
-- `GET  /`                       → HTML page (same content as `/event/:slug`)
-- `GET  /event/:slug`            → HTML page (client-side routing reads `:slug`)
-- `GET  /api/event/:slug`        → combined JSON, pre-compressed, ETag-aware
+- `GET  /`                       → HTML page — event picker (grid of all events)
+- `GET  /event/:slug`            → HTML page — single-event view (list + map tabs)
+- `GET  /api/events`             → cached events list (refreshed every 5 min)
+- `GET  /api/event/:slug`        → combined JSON, pre-compressed, ETag-aware (30 s refresh)
 
 ---
 
@@ -153,6 +154,7 @@ public and return `{ "status": "ok", "data": <payload> }`:
 
 | endpoint                                            | method | ~size (raw) | notes                                  |
 | --------------------------------------------------- | -----: | ----------: | -------------------------------------- |
+| `/v1/events/list`                                   | GET    |   220 KB    | all public events (used by `/api/events`) |
 | `/event/v1/<slug>/info`                             | GET    |   1.5 KB    | event metadata                         |
 | `/event/v3/participants/<slug>`                     | GET    |   260 KB    | leaderboard + rider stats              |
 | `/event/v1/tracks/<slug>?ts=now`                    | GET    |   5.9 MB    | **slow** (6–9 s TTFB) — all GPS tracks |

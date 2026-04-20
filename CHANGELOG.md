@@ -8,6 +8,7 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Entries 
 
 ### Added
 - **Segment timings** in the participant detail view — table of CP-to-CP splits showing each segment's duration, the rider's rank for that segment (across everyone who completed it) and the gap to the fastest rider on that leg.
+- **100 km segments** — second split table below the CP segments, bucketing the track by every 100 km of actual distance covered (haversine along the points) with the same rank + gap columns. Markers per rider are cached by `state.tracks` identity so repeated detail views don't recompute.
 
 ### Changed
 - **README rewritten** to match the current feature set: documents every tab (List / Map / Feed), controls (`ℹ`, `🔔`), playback scrubber, profiles, rest timeline, segments, cactus pacer, notification triggers, URL state, UTC-aware time display, and the server's paginated-tracks pipeline.

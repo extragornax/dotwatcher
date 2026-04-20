@@ -1486,6 +1486,83 @@
     `;
   }
 
+  let kmMarkersCache = { tracks: null, byPid: null };
+  function kmMarkersFor(track, step = 100) {
+    if (!track || track.length < 2) return [];
+    const markers = [];
+    let cum = 0, nextTarget = step;
+    for (let i = 1; i < track.length; i++) {
+      const a = track[i - 1], b = track[i];
+      const seg = haversineKm([a[1], a[2]], [b[1], b[2]]);
+      const prev = cum;
+      cum += seg;
+      while (cum >= nextTarget) {
+        const f = seg > 0 ? (nextTarget - prev) / seg : 0;
+        const t = a[0] + (b[0] - a[0]) * f;
+        markers.push({ km: nextTarget, t });
+        nextTarget += step;
+      }
+    }
+    return markers;
+  }
+  function getKmMarkersByPid(step = 100) {
+    if (!state || !state.tracks) return new Map();
+    if (kmMarkersCache.tracks === state.tracks && kmMarkersCache.step === step) return kmMarkersCache.byPid;
+    const m = new Map();
+    for (const tr of (state.tracks.tracks || [])) {
+      m.set(tr.participant_id, kmMarkersFor(tr.track, step));
+    }
+    kmMarkersCache = { tracks: state.tracks, step, byPid: m };
+    return m;
+  }
+
+  function renderKmSegments(p, step = 100) {
+    const track = ((state.tracks && state.tracks.tracks) || []).find(t => t.participant_id === p.id);
+    if (!track || !track.track || track.track.length < 2) return '';
+    const byPid = getKmMarkersByPid(step);
+    const myMarkers = byPid.get(p.id) || [];
+    if (!myMarkers.length) return '';
+    const parts = state.participants || [];
+    const tracksById = new Map((state.tracks.tracks || []).map(t => [t.participant_id, t]));
+
+    const rows = [];
+    for (let i = 0; i < myMarkers.length; i++) {
+      const startMy = i === 0 ? track.track[0][0] : myMarkers[i - 1].t;
+      const endMy = myMarkers[i].t;
+      const dMy = endMy - startMy;
+
+      const durs = [];
+      for (const pp of parts) {
+        const mk = byPid.get(pp.id);
+        if (!mk || mk.length <= i) continue;
+        const tr = tracksById.get(pp.id);
+        if (!tr || !tr.track || !tr.track.length) continue;
+        const start = i === 0 ? tr.track[0][0] : mk[i - 1].t;
+        const dur = mk[i].t - start;
+        if (dur > 0) durs.push({ pid: pp.id, dur });
+      }
+      durs.sort((a, b) => a.dur - b.dur);
+      const idx = durs.findIndex(x => x.pid === p.id);
+      const rank = idx >= 0
+        ? `#${idx + 1} / ${durs.length}${idx > 0 ? ` · +${fmtDur(dMy - durs[0].dur)}` : ''}`
+        : '—';
+
+      rows.push(`<tr>
+        <td>${i * step}–${(i + 1) * step} km</td>
+        <td>${fmtDur(dMy)}</td>
+        <td class="n">${rank}</td>
+      </tr>`);
+    }
+
+    return `
+      <h3 style="margin:18px 0 6px">${step} km segments</h3>
+      <table>
+        <thead><tr><th>Distance</th><th>Time</th><th class="n">Segment rank</th></tr></thead>
+        <tbody>${rows.join('')}</tbody>
+      </table>
+    `;
+  }
+
   function renderSegments(p) {
     const cps = ((state.geo && state.geo.cps) || []).slice().sort((a, b) => a.order - b.order);
     if (cps.length < 2) return '';
@@ -1598,6 +1675,7 @@
       ${renderProfiles(p)}
       ${renderRestTimeline(p)}
       ${renderSegments(p)}
+      ${renderKmSegments(p, 100)}
       <h3 style="margin:18px 0 6px">Checkpoints</h3>
       <table>
         <thead><tr><th>#</th><th>Name</th><th class="n">Rank</th><th>When</th></tr></thead>

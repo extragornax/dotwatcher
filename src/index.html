@@ -49,6 +49,12 @@
   .plabel.fav { box-shadow: 0 0 0 2px #f1c40f, 0 0 10px rgba(241,196,15,0.55); }
   .plabel.sleep { opacity: 0.55; }
   .plabel.stale { opacity: 0.4; border-style: dashed; }
+  .map-scrubber { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); z-index: 500; background: rgba(20,24,29,0.92); backdrop-filter: blur(6px); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; display: flex; align-items: center; gap: 8px; color: var(--fg); font-size: 12px; max-width: calc(100vw - 24px); }
+  .map-scrubber input[type=range] { width: 240px; accent-color: var(--accent); }
+  .map-scrubber select { background: var(--panel-2); border: 1px solid var(--border); color: var(--fg); padding: 3px 6px; border-radius: 4px; font: inherit; font-size: 12px; }
+  .map-scrubber button { padding: 3px 9px; min-width: 30px; }
+  .map-scrubber .scrub-time { font-variant-numeric: tabular-nums; min-width: 130px; text-align: center; color: var(--mute); }
+  .map-scrubber .scrub-time.scrubbing { color: var(--warn); }
   #detail { padding: 18px 22px; overflow: auto; max-height: calc(100vh - 52px); }
   #detail h2 { margin: 0 0 6px; font-size: 20px; }
   #detail .tagline { color: var(--mute); margin: 0 0 18px; }
@@ -143,6 +149,14 @@
   .card .dates { color: var(--mute); font-size: 11px; margin-top: 4px; font-variant-numeric: tabular-nums; }
   header .event-back { color: var(--mute); font-size: 12px; text-decoration: none; border: 1px solid var(--border); padding: 4px 10px; border-radius: 6px; }
   header .event-back:hover { color: var(--fg); }
+  .profile { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-top: 14px; }
+  .profile h4 { margin: 0 0 6px; font-size: 12px; font-weight: 600; color: var(--mute); text-transform: uppercase; letter-spacing: .06em; display: flex; justify-content: space-between; align-items: baseline; }
+  .profile h4 .range { color: var(--fg); font-weight: 500; font-size: 11px; letter-spacing: 0; text-transform: none; }
+  .profile svg { display: block; width: 100%; height: 80px; }
+  .profile .line { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-linejoin: round; }
+  .profile .area { fill: var(--accent); opacity: 0.15; }
+  .profile.speed .line { stroke: #3fb950; }
+  .profile.speed .area { fill: #3fb950; opacity: 0.15; }
   @media (max-width: 880px) {
     #view-list.active { grid-template-columns: 1fr; }
     #sidebar { max-height: 55vh; border-right: none; border-bottom: 1px solid var(--border); }
@@ -196,6 +210,19 @@
 
 <section id="view-map" class="view">
   <div id="map"></div>
+  <div class="map-scrubber" id="map-scrubber">
+    <button id="scrub-play" class="map-btn" type="button" title="play / pause">▶</button>
+    <select id="scrub-speed" title="playback speed">
+      <option value="60">1s = 1min</option>
+      <option value="300">1s = 5min</option>
+      <option value="1200" selected>1s = 20min</option>
+      <option value="3600">1s = 1h</option>
+      <option value="21600">1s = 6h</option>
+    </select>
+    <input id="scrub-slider" type="range" min="0" max="1000" step="1" value="1000" />
+    <span id="scrub-time" class="scrub-time">live</span>
+    <button id="scrub-live" class="map-btn" type="button" title="jump to live">live</button>
+  </div>
   <div class="map-overlay">
     <input id="mapq" type="search" placeholder="jump to rider…" />
     <select id="map-theme" title="map style"></select>
@@ -284,6 +311,12 @@
   let cactusPath = null;
   let cactusMarker = null;
   let cactusTimer = null;
+
+  let playbackTime = null; // null = live
+  let playing = false;
+  let playSpeedFactor = 1200;
+  let playTickTimer = null;
+  const PLAY_TICK_MS = 200;
   function loadFavs() {
     if (!favKey) return new Set();
     try { return new Set(JSON.parse(localStorage.getItem(favKey) || '[]')); }
@@ -405,11 +438,126 @@
     return '#3fb950';
   }
 
+  function eventStartMs() {
+    return state && state.info && state.info.start_date ? new Date(state.info.start_date).getTime() : null;
+  }
+  function eventEndMs() {
+    return state && state.info && state.info.end_date ? new Date(state.info.end_date).getTime() : null;
+  }
+  function currentMaxTime() {
+    const end = eventEndMs();
+    const now = Date.now();
+    return end ? Math.min(now, end) : now;
+  }
+  function currentPlaybackTime() {
+    return playbackTime == null ? currentMaxTime() : playbackTime;
+  }
+
+  // Largest index i where track[i][0] <= tRelSec; -1 if none.
+  function binSearchLE(track, tRel) {
+    const n = track.length;
+    if (!n || track[0][0] > tRel) return -1;
+    if (track[n - 1][0] <= tRel) return n - 1;
+    let lo = 0, hi = n - 1;
+    while (lo < hi - 1) {
+      const mid = (lo + hi) >> 1;
+      if (track[mid][0] <= tRel) lo = mid; else hi = mid;
+    }
+    return lo;
+  }
+
   function lastPointOf(participantId) {
     const t = (state.tracks.tracks || []).find(x => x.participant_id === participantId);
     if (!t || !t.track || !t.track.length) return null;
-    const p = t.track[t.track.length - 1];
+    if (playbackTime == null) {
+      const p = t.track[t.track.length - 1];
+      return { lat: p[1], lng: p[2], elev: p[3], t: p[0] };
+    }
+    const startMs = eventStartMs();
+    if (!startMs) return null;
+    const relSec = (playbackTime - startMs) / 1000;
+    const idx = binSearchLE(t.track, relSec);
+    if (idx < 0) return null;
+    const p = t.track[idx];
     return { lat: p[1], lng: p[2], elev: p[3], t: p[0] };
+  }
+
+  let scheduledRender = null;
+  function scheduleRenderMap() {
+    if (scheduledRender) return;
+    scheduledRender = requestAnimationFrame(() => {
+      scheduledRender = null;
+      if (map) renderMap();
+    });
+  }
+
+  function fmtScrubTime(ms) {
+    return new Date(ms).toLocaleString(undefined, { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+  }
+
+  function updateScrubberUI() {
+    const startMs = eventStartMs();
+    const end = currentMaxTime();
+    const slider = document.getElementById('scrub-slider');
+    const timeEl = document.getElementById('scrub-time');
+    const playBtn = document.getElementById('scrub-play');
+    if (!startMs || !end || end <= startMs) return;
+    const now = currentPlaybackTime();
+    const f = (now - startMs) / (end - startMs);
+    slider.value = Math.round(f * 1000).toString();
+    if (playbackTime == null) {
+      timeEl.textContent = 'live · ' + fmtScrubTime(end);
+      timeEl.classList.remove('scrubbing');
+    } else {
+      timeEl.textContent = fmtScrubTime(playbackTime);
+      timeEl.classList.add('scrubbing');
+    }
+    playBtn.textContent = playing ? '⏸' : '▶';
+  }
+
+  function setPlaybackTime(ms) {
+    const startMs = eventStartMs();
+    const end = currentMaxTime();
+    if (!startMs || !end) return;
+    const clamped = Math.max(startMs, Math.min(end, ms));
+    playbackTime = clamped >= end ? null : clamped;
+    updateScrubberUI();
+    scheduleRenderMap();
+  }
+
+  function stopPlayback() {
+    playing = false;
+    if (playTickTimer) { clearInterval(playTickTimer); playTickTimer = null; }
+    updateScrubberUI();
+  }
+
+  function playTick() {
+    const startMs = eventStartMs();
+    const end = currentMaxTime();
+    if (!startMs || !end) return stopPlayback();
+    const now = currentPlaybackTime();
+    const stepMs = playSpeedFactor * 1000 * (PLAY_TICK_MS / 1000);
+    const next = now + stepMs;
+    if (next >= end) {
+      playbackTime = null;
+      stopPlayback();
+    } else {
+      playbackTime = next;
+    }
+    updateScrubberUI();
+    scheduleRenderMap();
+  }
+
+  function togglePlay() {
+    if (playing) { stopPlayback(); return; }
+    const startMs = eventStartMs();
+    const end = currentMaxTime();
+    if (!startMs || !end) return;
+    // If starting from live, rewind to start so there's something to play.
+    if (playbackTime == null) playbackTime = startMs;
+    playing = true;
+    playTickTimer = setInterval(playTick, PLAY_TICK_MS);
+    updateScrubberUI();
   }
 
   function ensureMap() {
@@ -517,6 +665,7 @@
     renderTraces();
     renderCactus();
     if (!cactusTimer) cactusTimer = setInterval(renderCactus, 60000);
+    updateScrubberUI();
 
     // Fit once on first render.
     if (!mapLayers.didFit) {
@@ -565,7 +714,7 @@
   function cactusPosition() {
     const cp = computeCactusPath();
     if (!cp) return null;
-    let f = (Date.now() - cp.start) / (cp.end - cp.start);
+    let f = (currentPlaybackTime() - cp.start) / (cp.end - cp.start);
     f = Math.max(0, Math.min(1, f));
     const target = f * cp.total;
     let lo = 0, hi = cp.cum.length - 1;
@@ -614,11 +763,20 @@
     const tracksById = new Map(tracks.map(t => [t.participant_id, t]));
     const partsById = new Map(state.participants.map(p => [p.id, p]));
 
+    const startMs = eventStartMs();
+    const relSec = playbackTime != null && startMs ? (playbackTime - startMs) / 1000 : null;
+
     const drawTrace = (id, weight, opacity) => {
       const t = tracksById.get(id);
       if (!t || !t.track || t.track.length < 2) return;
       const p = partsById.get(id);
-      L.polyline(t.track.map(pt => [pt[1], pt[2]]), {
+      let pts = t.track;
+      if (relSec != null) {
+        const idx = binSearchLE(pts, relSec);
+        if (idx < 1) return;
+        pts = pts.slice(0, idx + 1);
+      }
+      L.polyline(pts.map(pt => [pt[1], pt[2]]), {
         color: rankColor(p && p.overall_rank),
         weight,
         opacity,
@@ -838,6 +996,56 @@
     `;
   }
 
+  function sparklineSvg(pts, W, H) {
+    if (!pts.length) return '';
+    let minV = Infinity, maxV = -Infinity, minT = Infinity, maxT = -Infinity;
+    for (const [t, v] of pts) {
+      if (v == null || isNaN(v)) continue;
+      if (v < minV) minV = v;
+      if (v > maxV) maxV = v;
+      if (t < minT) minT = t;
+      if (t > maxT) maxT = t;
+    }
+    if (!isFinite(minV) || maxT === minT) return '';
+    const spanV = Math.max(1e-6, maxV - minV);
+    const spanT = Math.max(1e-6, maxT - minT);
+    const x = t => ((t - minT) / spanT) * W;
+    const y = v => H - ((v - minV) / spanV) * (H - 4) - 2;
+    let d = '';
+    for (let i = 0; i < pts.length; i++) {
+      const [t, v] = pts[i];
+      if (v == null || isNaN(v)) continue;
+      d += (d ? 'L' : 'M') + x(t).toFixed(1) + ' ' + y(v).toFixed(1);
+    }
+    const area = d + ` L${W} ${H} L0 ${H} Z`;
+    return `<path class="area" d="${area}"/><path class="line" d="${d}"/>`;
+  }
+
+  function renderProfiles(p) {
+    const track = ((state.tracks && state.tracks.tracks) || []).find(t => t.participant_id === p.id);
+    if (!track || !track.track || track.track.length < 2) return '';
+    const pts = track.track;
+    const elev = pts.map(pt => [pt[0], pt[3]]);
+    const speed = pts.map(pt => [pt[0], pt[4]]);
+    const elevVals = elev.map(x => x[1]).filter(v => v != null && !isNaN(v));
+    const spdVals = speed.map(x => x[1]).filter(v => v != null && !isNaN(v));
+    const W = 600, H = 80;
+    const eMin = elevVals.length ? Math.min(...elevVals) : null;
+    const eMax = elevVals.length ? Math.max(...elevVals) : null;
+    const sMax = spdVals.length ? Math.max(...spdVals) : null;
+    const sAvg = spdVals.length ? spdVals.reduce((a, b) => a + b, 0) / spdVals.length : null;
+    return `
+      <div class="profile">
+        <h4>Elevation <span class="range">${eMin != null ? eMin.toFixed(0) + '–' + eMax.toFixed(0) + ' m' : '—'}</span></h4>
+        <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${sparklineSvg(elev, W, H)}</svg>
+      </div>
+      <div class="profile speed">
+        <h4>Speed <span class="range">${sMax != null ? 'max ' + sMax.toFixed(1) + ' · avg ' + sAvg.toFixed(1) + ' km/h' : '—'}</span></h4>
+        <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${sparklineSvg(speed, W, H)}</svg>
+      </div>
+    `;
+  }
+
   function renderDetail(p) {
     const cps = (state.geo.cps || []).slice().sort((a, b) => a.order - b.order);
     const cp_rank = p.cp_rank || [];
@@ -858,6 +1066,7 @@
         <div class="stat"><div class="label">Battery</div><div class="value">${p.battery != null ? p.battery + '%' : '—'}</div></div>
         <div class="stat"><div class="label">Status</div><div class="value">${escape(p.status || '—')}${p.sleeping ? ' · zZz' : ''}</div></div>
       </div>
+      ${renderProfiles(p)}
       <h3 style="margin:18px 0 6px">Checkpoints</h3>
       <table>
         <thead><tr><th>#</th><th>Name</th><th class="n">Rank</th><th>When</th></tr></thead>
@@ -884,6 +1093,25 @@
   function escape(s) {
     return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
+
+  document.getElementById('scrub-play').addEventListener('click', togglePlay);
+  document.getElementById('scrub-live').addEventListener('click', () => {
+    stopPlayback();
+    playbackTime = null;
+    updateScrubberUI();
+    scheduleRenderMap();
+  });
+  document.getElementById('scrub-speed').addEventListener('change', (ev) => {
+    playSpeedFactor = parseFloat(ev.target.value) || 1200;
+  });
+  document.getElementById('scrub-slider').addEventListener('input', (ev) => {
+    if (playing) stopPlayback();
+    const startMs = eventStartMs();
+    const end = currentMaxTime();
+    if (!startMs || !end) return;
+    const f = parseFloat(ev.target.value) / 1000;
+    setPlaybackTime(startMs + f * (end - startMs));
+  });
 
   document.getElementById('q').addEventListener('input', () => renderList());
   document.getElementById('catbar').addEventListener('click', (ev) => {

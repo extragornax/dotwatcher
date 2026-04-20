@@ -6,6 +6,8 @@
 <title>madcap_fast</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
       integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
 <style>
   :root {
     --bg: #0b0d10;
@@ -47,6 +49,14 @@
   .fav-toggle:hover { color: #f1c40f; }
   .pmark.fav { box-shadow: 0 0 0 2px #f1c40f, 0 0 12px rgba(241,196,15,0.65); }
   .cactus-mark { font-size: 26px; line-height: 1; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.9)); }
+  .marker-cluster { background: rgba(247, 129, 102, 0.2); border: 1px solid rgba(247, 129, 102, 0.6); }
+  .marker-cluster div { background: rgba(247, 129, 102, 0.85); color: #fff; font-weight: 700; }
+  .marker-cluster-small { background: rgba(63, 185, 80, 0.22); border-color: rgba(63, 185, 80, 0.6); }
+  .marker-cluster-small div { background: rgba(63, 185, 80, 0.9); }
+  .marker-cluster-medium { background: rgba(210, 153, 34, 0.22); border-color: rgba(210, 153, 34, 0.6); }
+  .marker-cluster-medium div { background: rgba(210, 153, 34, 0.9); }
+  .marker-cluster-large { background: rgba(248, 81, 73, 0.22); border-color: rgba(248, 81, 73, 0.6); }
+  .marker-cluster-large div { background: rgba(248, 81, 73, 0.9); }
   .plabel { display: inline-flex; align-items: center; gap: 5px; background: rgba(20,24,29,0.88); color: var(--fg); border: 1.5px solid rgba(255,255,255,0.85); border-radius: 12px; padding: 2px 8px 2px 4px; font-size: 11px; font-weight: 600; white-space: nowrap; box-shadow: 0 1px 3px rgba(0,0,0,0.6); line-height: 1; transition: transform .12s ease; }
   .plabel .pdot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; border: 1px solid rgba(0,0,0,0.5); }
   .plabel.selected { transform: scale(1.1); border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent), 0 0 10px var(--accent); }
@@ -312,6 +322,7 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script>
 (() => {
   const mode = location.pathname.startsWith('/event/') ? 'event' : 'home';
@@ -826,7 +837,13 @@
       routes: L.layerGroup().addTo(map),
       cps: L.layerGroup().addTo(map),
       traces: L.layerGroup().addTo(map),
-      participants: L.layerGroup().addTo(map),
+      participants: L.markerClusterGroup({
+        disableClusteringAtZoom: 11,
+        spiderfyOnMaxZoom: false,
+        showCoverageOnHover: false,
+        chunkedLoading: true,
+        maxClusterRadius: 55,
+      }).addTo(map),
       participantMarkers: new Map(),
       didFit: false,
     };

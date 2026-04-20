@@ -30,11 +30,11 @@ USER madcap
 
 COPY --from=builder /app/target/release/madcap_fast /usr/local/bin/madcap_fast
 
-ENV PORT=8080 \
+ENV PORT=9004 \
     RUST_LOG=madcap_fast=info,tower_http=info \
     MADCAP_WARM_SLUG=desertus-bikus-26
 
-EXPOSE 8080
+EXPOSE 9004
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
     CMD curl -fsS "http://127.0.0.1:${PORT}/" >/dev/null || exit 1

@@ -199,14 +199,14 @@ refresh).
 
 ```bash
 cargo run --release
-# then open http://127.0.0.1:8080/event/desertus-bikus-26
+# then open http://127.0.0.1:9004/event/desertus-bikus-26
 ```
 
 ### Docker Compose
 
 ```bash
 docker compose up -d --build
-# then open http://127.0.0.1:8080/event/desertus-bikus-26
+# then open http://127.0.0.1:9004/event/desertus-bikus-26
 ```
 
 Override the host port or warm slug inline:
@@ -224,10 +224,10 @@ rebuilds only recompile `src/`.
 
 | var                | default               | meaning                                      |
 | ------------------ | --------------------- | -------------------------------------------- |
-| `PORT`             | `8080`                | bind port                                    |
+| `PORT`             | `9004`                | bind port                                    |
 | `MADCAP_WARM_SLUG` | `desertus-bikus-26`   | slug to pre-warm on boot; set empty to skip  |
 | `RUST_LOG`         | `madcap_fast=info`    | standard `tracing_subscriber` filter         |
-| `HOST_PORT`        | `8080`                | compose only: host-side port mapping         |
+| `HOST_PORT`        | `9004`                | compose only: host-side port mapping         |
 
 The server exposes:
 

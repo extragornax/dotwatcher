@@ -480,7 +480,7 @@ async fn main() -> Result<()> {
     let port: u16 = std::env::var("PORT")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(8080);
+        .unwrap_or(9004);
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
     info!(%addr, "madcap_fast listening");

@@ -7,13 +7,13 @@ services:
     container_name: madcap_fast
     restart: unless-stopped
     ports:
-      - "${HOST_PORT:-8080}:8080"
+      - "${HOST_PORT:-9004}:9004"
     environment:
-      PORT: "8080"
+      PORT: "9004"
       MADCAP_WARM_SLUG: "${MADCAP_WARM_SLUG:-desertus-bikus-26}"
       RUST_LOG: "${RUST_LOG:-madcap_fast=info,tower_http=info}"
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/"]
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9004/"]
       interval: 30s
       timeout: 3s
       retries: 3

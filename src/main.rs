@@ -6,7 +6,6 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use madcap_fast::merge_track_pages;
 use axum::{
     Router,
     extract::{Path, State},
@@ -15,6 +14,7 @@ use axum::{
     routing::get,
 };
 use bytes::Bytes;
+use madcap_fast::merge_track_pages;
 use reqwest::Client;
 use serde::Serialize;
 use serde_json::{Value, value::RawValue};
@@ -76,7 +76,10 @@ async fn fetch_raw(
             .header(header::CONTENT_TYPE, "application/json")
             .body(b.to_owned());
     }
-    let res = req.send().await.with_context(|| format!("requesting {url}"))?;
+    let res = req
+        .send()
+        .await
+        .with_context(|| format!("requesting {url}"))?;
     let status = res.status();
     let text = res
         .text()
@@ -88,8 +91,8 @@ async fn fetch_raw(
             &text[..text.len().min(200)]
         );
     }
-    let v: Value = serde_json::from_str(&text)
-        .with_context(|| format!("parsing json from {url}"))?;
+    let v: Value =
+        serde_json::from_str(&text).with_context(|| format!("parsing json from {url}"))?;
     let inner = v.get("data").cloned().unwrap_or(v);
     let raw = RawValue::from_string(serde_json::to_string(&inner)?)?;
     Ok(raw)
@@ -119,8 +122,8 @@ async fn fetch_tracks_paginated(client: &Client, slug: &str) -> Result<Box<RawVa
                 &text[..text.len().min(200)]
             );
         }
-        let v: Value = serde_json::from_str(&text)
-            .with_context(|| format!("parsing json from {url}"))?;
+        let v: Value =
+            serde_json::from_str(&text).with_context(|| format!("parsing json from {url}"))?;
         let data = v.get("data").cloned().unwrap_or(v);
 
         let prev = data.get("previous_page_ts").and_then(|p| {
@@ -222,10 +225,7 @@ async fn fetch_events_list(client: &Client) -> Result<Snapshot> {
 
     // Unwrap the `{ "events": [...] }` envelope so the client just sees the array.
     let parsed: Value = serde_json::from_str(inner.get())?;
-    let list = parsed
-        .get("events")
-        .cloned()
-        .unwrap_or(parsed);
+    let list = parsed.get("events").cloned().unwrap_or(parsed);
 
     let wrapper = serde_json::json!({
         "fetched_at_unix": std::time::SystemTime::now()
@@ -330,13 +330,14 @@ async fn combined_handler(
         tokio::time::sleep(Duration::from_millis(100)).await;
     };
 
-    serve_snapshot(snap, &headers, "public, max-age=15, stale-while-revalidate=60")
+    serve_snapshot(
+        snap,
+        &headers,
+        "public, max-age=15, stale-while-revalidate=60",
+    )
 }
 
-async fn events_list_handler(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-) -> Response {
+async fn events_list_handler(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
     let deadline = Instant::now() + Duration::from_secs(20);
     let snap = loop {
         if let Some(s) = state.events_list.snapshot.read().await.clone() {
@@ -348,7 +349,11 @@ async fn events_list_handler(
         tokio::time::sleep(Duration::from_millis(100)).await;
     };
 
-    serve_snapshot(snap, &headers, "public, max-age=60, stale-while-revalidate=300")
+    serve_snapshot(
+        snap,
+        &headers,
+        "public, max-age=60, stale-while-revalidate=300",
+    )
 }
 
 fn serve_snapshot(snap: Snapshot, headers: &HeaderMap, cache_control: &'static str) -> Response {
@@ -376,7 +381,10 @@ fn serve_snapshot(snap: Snapshot, headers: &HeaderMap, cache_control: &'static s
         HeaderValue::from_static("application/json; charset=utf-8"),
     );
     h.insert(header::ETAG, HeaderValue::from_str(&snap.etag).unwrap());
-    h.insert(header::CACHE_CONTROL, HeaderValue::from_static(cache_control));
+    h.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static(cache_control),
+    );
     h.insert(header::VARY, HeaderValue::from_static("Accept-Encoding"));
     h.insert(
         "x-cache-age-ms",
@@ -451,7 +459,8 @@ async fn main() -> Result<()> {
         events_list,
     });
 
-    let warm_slug = std::env::var("MADCAP_WARM_SLUG").unwrap_or_else(|_| "desertus-bikus-26".into());
+    let warm_slug =
+        std::env::var("MADCAP_WARM_SLUG").unwrap_or_else(|_| "desertus-bikus-26".into());
     if !warm_slug.is_empty() {
         let s = state.clone();
         tokio::spawn(async move {

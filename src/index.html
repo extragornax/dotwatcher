@@ -92,6 +92,8 @@
   .tab { background: transparent; border: 1px solid var(--border); color: var(--mute); padding: 5px 12px; border-radius: 6px; font: inherit; cursor: pointer; }
   .tab.active { background: var(--panel-2); color: var(--fg); border-color: #3d444d; }
   .tab:hover { color: var(--fg); }
+  .tab.notif.on { background: #3a2a0a; border-color: #5a3a0a; color: #f1c40f; }
+  .tab.notif:disabled { opacity: 0.4; cursor: not-allowed; }
   .view { display: none; }
   .view.active { display: block; }
   #view-list { display: none; }
@@ -182,6 +184,7 @@
     <span id="status" class="badge cold">cold</span>
   </div>
   <div class="tabs" role="tablist" id="tabs" style="display:none">
+    <button id="notif-toggle" class="tab notif" type="button" title="notifications" aria-pressed="false">🔔</button>
     <button class="tab active" data-tab="list" role="tab" aria-selected="true">List</button>
     <button class="tab" data-tab="map" role="tab" aria-selected="false">Map</button>
   </div>
@@ -316,6 +319,14 @@
   let labelStyle = localStorage.getItem(LABELS_KEY);
   if (!VALID_LABELS.has(labelStyle)) labelStyle = 'dot';
 
+  const NOTIF_ENABLED_KEY = 'madcap_notif_enabled';
+  const notifSupported = typeof window !== 'undefined' && 'Notification' in window;
+  let notifEnabled = notifSupported
+    && Notification.permission === 'granted'
+    && localStorage.getItem(NOTIF_ENABLED_KEY) === '1';
+  let prevParticipants = null;
+  let prevCactusKm = null;
+
   let cactusPath = null;
   let cactusMarker = null;
   let cactusTimer = null;
@@ -358,6 +369,97 @@
     const b = document.getElementById('map-traces');
     if (b) { b.classList.toggle('on', showTraces); b.setAttribute('aria-pressed', showTraces); }
     if (map) renderTraces();
+  }
+
+  function fireNotif(title, opts) {
+    try { new Notification(title, opts || {}); } catch {}
+  }
+
+  function updateNotifBtn() {
+    const b = document.getElementById('notif-toggle');
+    if (!b) return;
+    if (!notifSupported) { b.style.display = 'none'; return; }
+    if (Notification.permission === 'denied') {
+      b.classList.remove('on');
+      b.disabled = true;
+      b.setAttribute('aria-pressed', 'false');
+      b.title = 'notifications blocked by browser';
+    } else {
+      b.disabled = false;
+      b.classList.toggle('on', notifEnabled);
+      b.setAttribute('aria-pressed', notifEnabled ? 'true' : 'false');
+      b.title = notifEnabled
+        ? 'notifications on (tab must stay open)'
+        : 'enable notifications for favorites';
+    }
+  }
+
+  async function toggleNotif() {
+    if (!notifSupported) return;
+    if (Notification.permission === 'denied') return;
+    if (notifEnabled) {
+      notifEnabled = false;
+      localStorage.setItem(NOTIF_ENABLED_KEY, '0');
+    } else {
+      let perm = Notification.permission;
+      if (perm === 'default') perm = await Notification.requestPermission();
+      if (perm === 'granted') {
+        notifEnabled = true;
+        localStorage.setItem(NOTIF_ENABLED_KEY, '1');
+      }
+    }
+    updateNotifBtn();
+  }
+
+  function runNotificationChecks() {
+    if (!notifEnabled || !state || !state.participants) return;
+    const curMap = new Map(state.participants.map(p => [p.id, p]));
+    if (!prevParticipants) { prevParticipants = curMap; return; }
+    const cd = cactusAt(Date.now());
+    const cps = (state.geo && state.geo.cps) || [];
+    for (const id of favs) {
+      const prev = prevParticipants.get(id);
+      const cur = curMap.get(id);
+      if (!cur) continue;
+      const name = `${cur.first_name || ''} ${cur.last_name || ''}`.trim() || 'rider';
+
+      // CP crossings
+      if (prev && Array.isArray(prev.cp_rank) && Array.isArray(cur.cp_rank)) {
+        for (let i = 0; i < cur.cp_rank.length; i++) {
+          if (!prev.cp_rank[i] && cur.cp_rank[i]) {
+            const cp = cps.find(c => c.order === i);
+            const cpName = cp ? (cp.short_name || cp.name || `CP${i}`) : `CP${i}`;
+            fireNotif(`${name} reached ${cpName}`, {
+              body: `rank #${cur.cp_rank[i][0]}${cur.distance != null ? ` · ${cur.distance.toFixed(0)} km` : ''}`,
+              tag: `madcap-cp-${slug}-${id}-${i}`,
+            });
+          }
+        }
+      }
+
+      // Caught by cactus (ahead → behind)
+      if (prev && cd && prev.distance != null && cur.distance != null && prevCactusKm != null) {
+        const prevDelta = prev.distance - prevCactusKm;
+        const curDelta = cur.distance - cd.km;
+        if (prevDelta > 0 && curDelta <= 0) {
+          fireNotif(`🌵 cactus caught ${name}`, {
+            body: `now ${Math.abs(curDelta).toFixed(1)} km behind the pacer`,
+            tag: `madcap-cactus-${slug}-${id}`,
+          });
+        }
+      }
+
+      // Battery fell below 20%
+      if (prev && cur.battery != null && prev.battery != null
+          && cur.battery <= 20 && prev.battery > 20) {
+        fireNotif(`${name}: battery low`, {
+          body: `${cur.battery}%`,
+          tag: `madcap-batt-${slug}-${id}`,
+        });
+      }
+    }
+    prevParticipants = curMap;
+    prevCactusKm = cd ? cd.km : null;
   }
 
   function readUrlState() {
@@ -428,6 +530,7 @@
     }
 
     render();
+    runNotificationChecks();
   }
 
   function render() {
@@ -1351,6 +1454,8 @@
   } else {
     document.getElementById('header-context').innerHTML = `event <b>${escape(slug)}</b>`;
     showEventView();
+    updateNotifBtn();
+    document.getElementById('notif-toggle').addEventListener('click', toggleNotif);
     const urlState = readUrlState();
     catFilter = urlState.cat;
     favOnly = urlState.favOnly;

@@ -7,6 +7,11 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Entries 
 ## [Unreleased]
 
 ### Added
+- **`docker-compose.monitoring.yml`** — sibling stack that brings up Prometheus and Grafana with 90-day retention and auto-provisions Prometheus as Grafana's default data source. `docker compose -f docker-compose.monitoring.yml up -d` → Grafana on `:3000`, Prometheus on `:9090`. Env overrides: `PROMETHEUS_PORT`, `GRAFANA_PORT`, `GRAFANA_USER`, `GRAFANA_PASSWORD`. Scrape config in `monitoring/prometheus.yml` points at `host.docker.internal:9004` (Linux-compat via `extra_hosts: host-gateway`). README's optional-monitoring section now references these files instead of inlining snippets.
+
+## [2026-04-21] 53874c1 — Metrics endpoint, CSV exports, Grafana how-to
+
+### Added
 - **Prometheus `/metrics` endpoint** — hand-rolled, zero new deps. Exposes counters (`madcap_fast_requests_total{path}`, `madcap_fast_responses_not_modified_total`, `madcap_fast_upstream_refreshes_total`, `madcap_fast_upstream_errors_total`) and per-slug gauges (`madcap_fast_cache_age_seconds`, `madcap_fast_cache_body_bytes`, `madcap_fast_upstream_last_ms`) plus the events-list cache age/size. Cache-Control is `no-store`.
 - **CSV exports** — `GET /api/event/:slug/csv` dumps the current leaderboard (overall_rank, category, category_rank, bib, first/last name, nickname, country, distance_km, speed_kmh, distance_to_next_cp_km, battery_pct, last_ping, status, sleeping) with an `attachment` Content-Disposition. `GET /api/events/csv` dumps the events list.
 - **README: Prometheus + Grafana setup guide** — sibling `docker-compose.monitoring.yml` + `prometheus.yml` snippets, Prometheus data source URL, and example Grafana queries (cache age / upstream latency / 304 rate / error rate / cache body size). Notes where per-rider time-series would go if we want race analytics later.

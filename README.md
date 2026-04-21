@@ -230,41 +230,28 @@ rebuilds only recompile `src/`.
 
 ### Prometheus + Grafana (optional)
 
-`/metrics` is always on. To stand up a local Prometheus + Grafana stack that
-scrapes it, add a sibling `docker-compose.monitoring.yml`:
+`/metrics` is always on. A sibling stack is included:
 
-```yaml
-services:
-  prometheus:
-    image: prom/prometheus:latest
-    command: ["--config.file=/etc/prometheus/prometheus.yml"]
-    volumes: [ "./prometheus.yml:/etc/prometheus/prometheus.yml:ro" ]
-    ports: [ "9090:9090" ]
-    restart: unless-stopped
-  grafana:
-    image: grafana/grafana:latest
-    environment:
-      GF_SECURITY_ADMIN_PASSWORD: admin
-    volumes: [ "grafana:/var/lib/grafana" ]
-    ports: [ "3000:3000" ]
-    restart: unless-stopped
-volumes:
-  grafana: {}
+```bash
+docker compose -f docker-compose.monitoring.yml up -d
+# Grafana   http://127.0.0.1:3000   (admin / admin — change it)
+# Prometheus http://127.0.0.1:9090
 ```
 
-with a minimal `prometheus.yml`:
+Files:
+- `docker-compose.monitoring.yml` — Prometheus + Grafana, named volumes
+  for TSDB and Grafana state, 90-day retention, runs independently of the
+  main `docker-compose.yml`.
+- `monitoring/prometheus.yml` — scrape config pointing at
+  `host.docker.internal:9004`. If you later put both stacks on the same
+  Docker network, swap that target for `madcap_fast:9004`.
+- `monitoring/grafana/provisioning/datasources/prometheus.yml` — auto-wires
+  Prometheus as the default Grafana data source on first boot.
 
-```yaml
-global: { scrape_interval: 30s }
-scrape_configs:
-  - job_name: madcap_fast
-    static_configs:
-      - targets: ["host.docker.internal:9004"]   # or "madcap_fast:9004" on the same compose network
-```
+Env overrides: `PROMETHEUS_PORT`, `GRAFANA_PORT`, `GRAFANA_USER`,
+`GRAFANA_PASSWORD`.
 
-Bring it up with `docker compose -f docker-compose.monitoring.yml up -d`,
-add Prometheus (`http://prometheus:9090`) as a Grafana data source at
-`http://127.0.0.1:3000`, and create panels from queries like:
+Once Grafana is up, build panels from queries like:
 
 - **Cache age per slug** — `madcap_fast_cache_age_seconds`
 - **Upstream latency trend** — `madcap_fast_upstream_last_ms`

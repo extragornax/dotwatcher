@@ -6,6 +6,11 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Entries 
 
 ## [Unreleased]
 
+### Added
+- **"Nearby riders" section in the detail view** — for the selected rider, a table of the 10 closest other riders by straight-line distance (haversine on their latest GPS fixes, honouring the scrubber). Shows overall rank, name, star, staff badge, gap in km, and a coloured ± course-distance delta. Clicking a name opens that rider's detail.
+- **Overtake feed** — every refresh diffs `overall_rank` against the previous snapshot. When a rider's rank improves, a lightweight entry is pushed into a rolling `overtakes` array (newest first, capped at 200). The Feed tab gained an **Overtakes** filter and the "All" view now merges overtakes with journal entries, sorted by timestamp. Each entry shows the rider, places gained, rank arrow, relative + absolute time, and links to their detail.
+- **`monitoring/setup-public-dashboards.sh`** — one-shot / idempotent bash script that clones the `madcap-race` dashboard once per slug currently emitting race metrics (uid becomes `madcap-race-<slug>`, the `slug` variable is pinned and hidden, title includes the slug), upserts each clone via Grafana's API, enables its public dashboard, and prints the resulting `…/public-dashboards/<accessToken>` URLs. Requires `curl` + `jq`; Grafana admin creds via `GRAFANA_USER` / `GRAFANA_PASSWORD`.
+
 ### Removed
 - **Anonymous Grafana access + Grafana 11.3.0 pin reverted.** The new Kubernetes-style dashboard API in Grafana 12+ refuses anonymous GETs; we briefly pinned to 11.3.0 and enabled `GF_AUTH_ANONYMOUS_*` to work around it. Replaced by Grafana's built-in external **dashboard / panel sharing** (which works regardless of version), so the pin and the four anonymous env vars are gone and the image is back to `grafana/grafana:latest`.
 

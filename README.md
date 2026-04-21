@@ -268,6 +268,22 @@ sharing** (external sharing toggle) — it bypasses the newer
 Kubernetes-style dashboard API that would otherwise 403 anonymous GETs,
 and doesn't require any extra env vars.
 
+To generate one public URL per cached race (variables are frozen in
+public dashboards, so this is the only way to get per-event URLs),
+run:
+
+```bash
+MADCAP_FAST_URL=http://localhost:9004 \
+GRAFANA_URL=http://localhost:9007 \
+GRAFANA_USER=admin GRAFANA_PASSWORD=admin \
+./monitoring/setup-public-dashboards.sh
+```
+
+The script upserts a cloned dashboard per slug (uid
+`madcap-race-<slug>`, `slug` variable pinned and hidden), enables its
+public dashboard, and prints the URLs. Idempotent — re-run whenever a
+new race enters the warm set. Requires `curl` and `jq`.
+
 #### Serving Grafana behind a public domain
 
 When Grafana is fronted by a reverse proxy (Caddy, nginx, …) at something

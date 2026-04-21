@@ -302,6 +302,7 @@
       <button class="pill active" data-ffilter="all">All</button>
       <button class="pill" data-ffilter="PICTURE">Photos</button>
       <button class="pill" data-ffilter="SLEEP">Sleeps</button>
+      <button class="pill" data-ffilter="OVERTAKE">Overtakes</button>
       <button class="pill" data-ffilter="fav">★ favorites</button>
     </div>
   </div>
@@ -448,6 +449,9 @@
   const prevLongStopKey = new Map();
 
   let feedFilter = 'all';
+  let overtakes = []; // rolling, newest first
+  const OVERTAKES_LIMIT = 200;
+  let prevOverallRanks = null;
 
   let cactusPath = null;
   let cactusMarker = null;
@@ -743,6 +747,7 @@
     }
 
     render();
+    trackOvertakes();
     runNotificationChecks();
   }
 
@@ -1384,43 +1389,98 @@
     document.getElementById('side-menu').setAttribute('aria-hidden', 'true');
   }
 
+  function trackOvertakes() {
+    if (!state || !state.participants) return;
+    const curRanks = new Map();
+    for (const p of state.participants) {
+      if (p.overall_rank != null) curRanks.set(p.id, p.overall_rank);
+    }
+    if (prevOverallRanks) {
+      const nowMs = Date.now();
+      for (const [pid, curRank] of curRanks) {
+        const prevRank = prevOverallRanks.get(pid);
+        if (prevRank == null) continue;
+        if (curRank < prevRank) {
+          overtakes.unshift({ tMs: nowMs, pid, from: prevRank, to: curRank });
+        }
+      }
+      if (overtakes.length > OVERTAKES_LIMIT) overtakes.length = OVERTAKES_LIMIT;
+    }
+    prevOverallRanks = curRanks;
+  }
+
   function renderFeed() {
     const root = document.getElementById('feed-list');
     const count = document.getElementById('feed-count');
     if (!root || !state) return;
     const entries = (state.journals && state.journals.entries) || [];
     const partsById = new Map(state.participants.map(p => [p.id, p]));
-    let list = entries.slice();
+
+    // Overtakes as pseudo-entries, keyed on tMs.
+    const overtakeEntries = overtakes.map(o => ({
+      type: 'OVERTAKE',
+      timestamp_ms: o.tMs,
+      participant_id: o.pid,
+      from: o.from,
+      to: o.to,
+    }));
+
+    const all = entries.map(e => ({ ...e, _ts: utcMs(e.timestamp) || 0 }))
+      .concat(overtakeEntries.map(e => ({ ...e, _ts: e.timestamp_ms })));
+
+    let list;
     if (feedFilter === 'PICTURE' || feedFilter === 'SLEEP') {
-      list = list.filter(e => e.type === feedFilter);
+      list = all.filter(e => e.type === feedFilter);
+    } else if (feedFilter === 'OVERTAKE') {
+      list = all.filter(e => e.type === 'OVERTAKE');
     } else if (feedFilter === 'fav') {
-      list = list.filter(e => favs.has(e.participant_id));
+      list = all.filter(e => favs.has(e.participant_id));
+    } else {
+      list = all;
     }
-    list.sort((a, b) => (utcMs(b.timestamp) || 0) - (utcMs(a.timestamp) || 0));
-    count.textContent = `${list.length} / ${entries.length}`;
+    list.sort((a, b) => b._ts - a._ts);
+
+    const baseTotal = entries.length + overtakeEntries.length;
+    count.textContent = `${list.length} / ${baseTotal}`;
+
     const frag = document.createDocumentFragment();
     for (const e of list) {
       const p = partsById.get(e.participant_id);
       const name = p ? `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'unknown' : 'unknown';
       const bib = p && p.bib ? `bib ${p.bib}` : '';
-      const url = (e.data && e.data.url) || '';
-      const isPic = e.type === 'PICTURE' && url;
-      const div = document.createElement('div');
-      div.className = 'feed-entry' + (isPic ? '' : ' no-thumb');
-      const thumb = isPic
-        ? `<a href="${escapeAttr(url)}" target="_blank" rel="noopener"><img class="thumb" src="${escapeAttr(url)}" loading="lazy" alt=""/></a>`
-        : '';
-      const rank = p && p.overall_rank != null ? ` · #${p.overall_rank}` : '';
       const fav = favs.has(e.participant_id) ? ' <span style="color:#f1c40f">★</span>' : '';
-      div.innerHTML = `
-        ${thumb}
-        <div>
-          <a class="who-link" data-action="detail" data-id="${escape(e.participant_id)}">${escape(name)}</a>${fav}${orgaBadge(p)}
-          <span class="type-badge ${e.type.toLowerCase()}">${escape(e.type)}</span>
-          <div class="meta">${escape(bib)}${rank} · ${sinceText(e.timestamp)} · <a href="https://www.google.com/maps?q=${e.latitude},${e.longitude}" target="_blank" rel="noopener">${e.latitude.toFixed(4)}, ${e.longitude.toFixed(4)}</a></div>
-        </div>
-        <div class="time">${fmtTime(e.timestamp)}</div>
-      `;
+      const div = document.createElement('div');
+
+      if (e.type === 'OVERTAKE') {
+        div.className = 'feed-entry no-thumb';
+        const gained = e.from - e.to;
+        const whenIso = new Date(e.timestamp_ms).toISOString();
+        div.innerHTML = `
+          <div>
+            <a class="who-link" data-action="detail" data-id="${escape(e.participant_id)}">${escape(name)}</a>${fav}${orgaBadge(p)}
+            <span class="type-badge">overtake</span>
+            <div class="meta">${escape(bib)} · climbed <b style="color:var(--good)">+${gained}</b> · #${e.from} → #${e.to} · ${sinceText(whenIso)}</div>
+          </div>
+          <div class="time">${fmtTime(whenIso)}</div>
+        `;
+      } else {
+        const url = (e.data && e.data.url) || '';
+        const isPic = e.type === 'PICTURE' && url;
+        div.className = 'feed-entry' + (isPic ? '' : ' no-thumb');
+        const thumb = isPic
+          ? `<a href="${escapeAttr(url)}" target="_blank" rel="noopener"><img class="thumb" src="${escapeAttr(url)}" loading="lazy" alt=""/></a>`
+          : '';
+        const rank = p && p.overall_rank != null ? ` · #${p.overall_rank}` : '';
+        div.innerHTML = `
+          ${thumb}
+          <div>
+            <a class="who-link" data-action="detail" data-id="${escape(e.participant_id)}">${escape(name)}</a>${fav}${orgaBadge(p)}
+            <span class="type-badge ${e.type.toLowerCase()}">${escape(e.type)}</span>
+            <div class="meta">${escape(bib)}${rank} · ${sinceText(e.timestamp)} · <a href="https://www.google.com/maps?q=${e.latitude},${e.longitude}" target="_blank" rel="noopener">${e.latitude.toFixed(4)}, ${e.longitude.toFixed(4)}</a></div>
+          </div>
+          <div class="time">${fmtTime(e.timestamp)}</div>
+        `;
+      }
       frag.appendChild(div);
     }
     root.replaceChildren(frag);
@@ -1887,6 +1947,44 @@
     `;
   }
 
+  function renderNearby(p) {
+    const my = lastPointOf(p.id);
+    if (!my) return '';
+    const items = [];
+    for (const other of state.participants) {
+      if (other.id === p.id) continue;
+      const pt = lastPointOf(other.id);
+      if (!pt) continue;
+      const d = haversineKm([my.lat, my.lng], [pt.lat, pt.lng]);
+      items.push({ pid: other.id, p: other, dist: d });
+    }
+    if (!items.length) return '';
+    items.sort((a, b) => a.dist - b.dist);
+    const top = items.slice(0, 10);
+    const myDist = p.distance ?? null;
+    const rows = top.map(x => {
+      const name = `${x.p.first_name || ''} ${x.p.last_name || ''}`.trim() || 'unknown';
+      const fav = favs.has(x.pid) ? ' <span style="color:#f1c40f">★</span>' : '';
+      const deltaKm = myDist != null && x.p.distance != null ? x.p.distance - myDist : null;
+      const deltaCell = deltaKm == null
+        ? '—'
+        : `<span style="color:${deltaKm >= 0 ? 'var(--good)' : 'var(--bad)'}">${deltaKm >= 0 ? '+' : ''}${deltaKm.toFixed(1)} km</span>`;
+      return `<tr>
+        <td>#${x.p.overall_rank ?? '-'}</td>
+        <td><a class="who-link" data-action="detail" data-id="${escape(x.pid)}">${escape(name)}</a>${fav}${orgaBadge(x.p)}</td>
+        <td class="n">${x.dist.toFixed(1)} km</td>
+        <td class="n">${deltaCell}</td>
+      </tr>`;
+    }).join('');
+    return `
+      <h3 style="margin:18px 0 6px">Nearby riders <span style="color:var(--mute);font-weight:normal;font-size:12px">— closest by straight-line</span></h3>
+      <table>
+        <thead><tr><th>#</th><th>Rider</th><th class="n">Gap</th><th class="n">Δ course</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  }
+
   function renderSegments(p) {
     const cps = ((state.geo && state.geo.cps) || []).slice().sort((a, b) => a.order - b.order);
     if (cps.length < 2) return '';
@@ -2089,6 +2187,7 @@
       ${renderRestTimeline(p)}
       ${renderSegments(p)}
       ${renderKmSegments(p, 100)}
+      ${renderNearby(p)}
       <h3 style="margin:18px 0 6px">Checkpoints</h3>
       <table>
         <thead><tr><th>#</th><th>Name</th><th class="n">Rank</th><th>When</th></tr></thead>

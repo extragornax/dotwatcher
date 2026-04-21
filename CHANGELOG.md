@@ -7,6 +7,10 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Entries 
 ## [Unreleased]
 
 ### Added
+### Changed
+- **Map overlay decluttered** — the overlay used to carry 5 toggle buttons + 2 selects + search + count on one row, which got crowded as features piled up. Now it holds only the high-frequency controls (search, ★ only, ⚙ settings, count); clicking ⚙ opens a popover below with the rest (tile style, marker labels, traces / elev / journals toggles) grouped into a Style section and an Overlays section. Outside click closes it.
+
+### Added
 - **Finish-time prediction + ETA to next CP** in the detail view — two new stat cells. `ETA next CP` uses the rider's current speed (or a rolling 1-hour average if they're barely moving) against `distance_to_next_cp.distance`. `ETA finish` projects the whole-course completion time from the remaining km divided by the rolling average, falling back to an event-wide average pace if the rolling window is empty. Returns `—` for stopped / finished riders.
 - **Top peak speeds leaderboard** — new "Peak speeds — top 10" table in the overview (shown when no rider is selected) listing riders by the single highest `point[4]` value across their whole track. Columns: rank, name (clickable to open detail), ★ + staff badges, max km/h, localized timestamp of when they hit it. Cached by `state.tracks` identity.
 - **Journal pins on the map** — new `journals` toggle in the map overlay (default off, persisted). Renders each `SLEEP` / `PICTURE` entry as a small circular marker (📸 / 🛌) at the entry's lat/lng. Clicking opens a popup with the rider name, type, timestamp, thumbnail (for photos) and an "open details →" shortcut. Honors the ★-only filter — journal pins follow the same favourites-only mode as the rider markers.

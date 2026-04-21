@@ -65,6 +65,15 @@
   .elev-banner .cursor { stroke: #f1c40f; stroke-width: 2; opacity: 0.9; }
   .elev-banner .elev-meta { position: absolute; top: 4px; right: 10px; font-size: 11px; color: var(--mute); font-variant-numeric: tabular-nums; pointer-events: none; line-height: 1.3; }
   #view-map.with-elev .map-overlay { top: 92px; }
+  #view-map.with-elev .map-settings-panel { top: 138px; }
+  .map-settings-panel { position: absolute; top: 54px; left: 12px; z-index: 501; background: rgba(20,24,29,0.94); backdrop-filter: blur(8px); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; display: none; min-width: 230px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+  .map-settings-panel.open { display: flex; flex-direction: column; gap: 8px; }
+  .map-settings-panel h5 { margin: 0; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--mute); font-weight: 600; }
+  .map-settings-panel .ms-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .map-settings-panel .ms-row label { color: var(--mute); font-size: 12px; }
+  .map-settings-panel select { flex: 1; background: var(--panel-2); border: 1px solid var(--border); color: var(--fg); padding: 4px 6px; border-radius: 4px; font: inherit; font-size: 12px; }
+  .map-settings-panel .ms-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+  .map-settings-panel .ms-btns .map-btn { flex: 1; min-width: 90px; }
   .plabel { display: inline-flex; align-items: center; gap: 5px; background: rgba(20,24,29,0.88); color: var(--fg); border: 1.5px solid rgba(255,255,255,0.85); border-radius: 12px; padding: 2px 8px 2px 4px; font-size: 11px; font-weight: 600; white-space: nowrap; box-shadow: 0 1px 3px rgba(0,0,0,0.6); line-height: 1; transition: transform .12s ease; }
   .plabel .pdot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; border: 1px solid rgba(0,0,0,0.5); }
   .plabel.selected { transform: scale(1.1); border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent), 0 0 10px var(--accent); }
@@ -317,17 +326,26 @@
   </div>
   <div class="map-overlay">
     <input id="mapq" type="search" placeholder="jump to rider…" />
-    <select id="map-theme" title="map style"></select>
-    <select id="map-labels" title="marker labels">
-      <option value="dot">dots</option>
-      <option value="bib">bibs</option>
-      <option value="name">names</option>
-    </select>
-    <button id="map-traces" class="map-btn on" type="button" title="toggle traces" aria-pressed="true">traces</button>
-    <button id="map-elev" class="map-btn on" type="button" title="toggle course elevation banner" aria-pressed="true">elev</button>
-    <button id="map-journals" class="map-btn" type="button" title="toggle journal pins (sleep / pictures)" aria-pressed="false">journals</button>
     <button id="map-favonly" class="map-btn fav" type="button" title="favorites only" aria-pressed="false">★ only</button>
+    <button id="map-settings" class="map-btn" type="button" title="map settings" aria-expanded="false">⚙</button>
     <span id="mapcount" style="color: var(--mute)">—</span>
+  </div>
+  <div id="map-settings-panel" class="map-settings-panel" aria-hidden="true">
+    <h5>Style</h5>
+    <div class="ms-row"><label>Tiles</label><select id="map-theme" title="map style"></select></div>
+    <div class="ms-row"><label>Labels</label>
+      <select id="map-labels" title="marker labels">
+        <option value="dot">dots</option>
+        <option value="bib">bibs</option>
+        <option value="name">names</option>
+      </select>
+    </div>
+    <h5 style="margin-top:6px">Overlays</h5>
+    <div class="ms-btns">
+      <button id="map-traces" class="map-btn on" type="button" title="toggle traces" aria-pressed="true">traces</button>
+      <button id="map-elev" class="map-btn on" type="button" title="toggle course elevation banner" aria-pressed="true">elev</button>
+      <button id="map-journals" class="map-btn" type="button" title="toggle journal pins (sleep / pictures)" aria-pressed="false">journals</button>
+    </div>
   </div>
   <div class="map-legend">
     <div class="row"><span class="sw" style="background:#f85149"></span>rank 1–10</div>
@@ -2097,6 +2115,26 @@
 
   function escape(s) {
     return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  {
+    const btn = document.getElementById('map-settings');
+    const panel = document.getElementById('map-settings-panel');
+    if (btn && panel) {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const open = panel.classList.toggle('open');
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        panel.setAttribute('aria-hidden', open ? 'false' : 'true');
+      });
+      document.addEventListener('click', (ev) => {
+        if (!panel.classList.contains('open')) return;
+        if (panel.contains(ev.target) || btn.contains(ev.target)) return;
+        panel.classList.remove('open');
+        btn.setAttribute('aria-expanded', 'false');
+        panel.setAttribute('aria-hidden', 'true');
+      });
+    }
   }
 
   document.getElementById('side-menu-open').addEventListener('click', openSideMenu);

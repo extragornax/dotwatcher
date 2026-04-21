@@ -6,6 +6,9 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Entries 
 
 ## [Unreleased]
 
+### Changed
+- **Grafana default host port moved from 9006 to 9007** — `9006` collided with another service; `9007` keeps everything in the 900x band (`madcap_fast:9004`, `prometheus:9090` loopback, `grafana:9007`). Override with `GRAFANA_PORT` if you need something else.
+
 ### Added
 - **Auto-provisioned Grafana dashboard** — `monitoring/grafana/dashboards/madcap_fast-race.json` + a provisioning config that drops it into a "madcap_fast" folder on first boot. The dashboard has an **Event** variable populated from `label_values(madcap_event_total_km, slug)` (every live cached race appears automatically) and a **Top N riders** slider. Panels: participants / active / started / sleeping / finished / course-total stat cards, overall-rank-over-time worms, distance-over-time, a joined current leaderboard table (bib / name / distance / speed / battery with colour-gradient cells), a low-battery watchlist, and the operational refresh-latency + cache-age trends. The Prometheus datasource is pinned with `uid: prometheus` so the dashboard JSON is portable. `docker-compose.monitoring.yml` now bind-mounts the dashboards directory into the Grafana container.
 - **Race metrics stop at the finish line** — `render_event_race_metrics` now parses `info.end_date` (hand-rolled UTC ISO parser, zero new deps) and returns `None` once the race is over. On the next 30 s refresh, the event's `race_metrics` slot goes empty and those Prometheus series disappear. Operational gauges (`cache_age`, `upstream_last_ms`, `cache_body_bytes`) keep reporting.

@@ -239,7 +239,7 @@ you actually want a dashboard, without disturbing metric collection.
 ```bash
 docker compose up -d                                   # madcap_fast + prometheus
 docker compose -f docker-compose.monitoring.yml up -d  # + grafana
-# Grafana    http://127.0.0.1:9006   (admin / admin — change it)
+# Grafana    http://127.0.0.1:9007   (admin / admin — change it)
 # Prometheus http://127.0.0.1:9090
 ```
 

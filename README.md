@@ -256,7 +256,9 @@ Files:
   for its own state.
 - `monitoring/prometheus.yml` — scrape config targeting `madcap_fast:9004`.
 - `monitoring/grafana/provisioning/datasources/prometheus.yml` — auto-wires
-  Prometheus as Grafana's default data source on first boot.
+  Prometheus as Grafana's default data source on first boot (UID
+  `prometheus`).
+- `monitoring/grafana/provisioning/dashboards/dashboards.yml` + `monitoring/grafana/dashboards/madcap_fast-race.json` — auto-loaded multi-race dashboard. An **Event** dropdown lists every cached & live slug via `label_values(madcap_event_total_km, slug)`, plus a **Top N riders** slider. Panels: 6 stat cards (participants / active / started / sleeping / finished / course total), rank-over-time worms, distance-over-time, current leaderboard table (rank + bib + name + distance + speed + battery with color-gradient), low-battery watchlist, and the operational refresh-latency + cache-age trends. Folder in Grafana: **madcap_fast**.
 
 Env overrides: `PROMETHEUS_PORT`, `GRAFANA_PORT`, `GRAFANA_USER`,
 `GRAFANA_PASSWORD`.

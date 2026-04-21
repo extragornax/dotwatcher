@@ -1,0 +1,532 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Participants",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "madcap_event_participants{slug=\"$slug\"}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": { "values": false, "calcs": ["lastNotNull"] },
+        "orientation": "horizontal",
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "blue", "value": null }]
+          }
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Active",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "madcap_event_active{slug=\"$slug\"}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": { "values": false, "calcs": ["lastNotNull"] },
+        "orientation": "horizontal",
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          }
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Started",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "madcap_event_started{slug=\"$slug\"}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": { "values": false, "calcs": ["lastNotNull"] },
+        "orientation": "horizontal",
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "purple", "value": null }]
+          }
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Sleeping",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "madcap_event_sleeping{slug=\"$slug\"}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": { "values": false, "calcs": ["lastNotNull"] },
+        "orientation": "horizontal",
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "orange", "value": null }]
+          }
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Finished",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "madcap_event_finished{slug=\"$slug\"}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": { "values": false, "calcs": ["lastNotNull"] },
+        "orientation": "horizontal",
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          }
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Course total",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "madcap_event_total_km{slug=\"$slug\"}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": { "values": false, "calcs": ["lastNotNull"] },
+        "orientation": "horizontal",
+        "textMode": "value",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "lengthkm",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "blue", "value": null }]
+          }
+        }
+      }
+    },
+
+    {
+      "type": "timeseries",
+      "title": "Overall rank — top $topn",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "bottomk($topn, madcap_rider_overall_rank{slug=\"$slug\"})",
+          "legendFormat": "#{{bib}} {{name}}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull"] },
+        "tooltip": { "mode": "multi", "sort": "asc" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1.5,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "min": 1
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Distance covered — top $topn",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "topk($topn, madcap_rider_distance_km{slug=\"$slug\"})",
+          "legendFormat": "#{{bib}} {{name}}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "lengthkm",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1.5,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        }
+      }
+    },
+
+    {
+      "type": "table",
+      "title": "Current leaderboard",
+      "gridPos": { "h": 12, "w": 16, "x": 0, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "madcap_rider_overall_rank{slug=\"$slug\"}",
+          "refId": "Rank",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "expr": "madcap_rider_distance_km{slug=\"$slug\"}",
+          "refId": "Distance",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "expr": "madcap_rider_speed_kmh{slug=\"$slug\"}",
+          "refId": "Speed",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "expr": "madcap_rider_battery_pct{slug=\"$slug\"}",
+          "refId": "Battery",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": { "byField": "bib", "mode": "outer" }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time 1": true, "Time 2": true, "Time 3": true, "Time 4": true,
+              "__name__ 1": true, "__name__ 2": true, "__name__ 3": true, "__name__ 4": true,
+              "job 1": true, "job 2": true, "job 3": true, "job 4": true,
+              "instance 1": true, "instance 2": true, "instance 3": true, "instance 4": true,
+              "slug 1": true, "slug 2": true, "slug 3": true, "slug 4": true,
+              "name 2": true, "name 3": true, "name 4": true,
+              "category 2": true, "category 3": true, "category 4": true
+            },
+            "renameByName": {
+              "Value #Rank": "Rank",
+              "Value #Distance": "Distance (km)",
+              "Value #Speed": "Speed (km/h)",
+              "Value #Battery": "Battery (%)",
+              "bib": "Bib",
+              "name 1": "Name",
+              "category 1": "Category"
+            },
+            "indexByName": {
+              "Value #Rank": 0,
+              "Bib": 1,
+              "Name": 2,
+              "Category": 3,
+              "Value #Distance": 4,
+              "Value #Speed": 5,
+              "Value #Battery": 6
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "left" }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Distance (km)" },
+            "properties": [{ "id": "unit", "value": "lengthkm" }, { "id": "decimals", "value": 1 }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Speed (km/h)" },
+            "properties": [{ "id": "unit", "value": "velocitykmh" }, { "id": "decimals", "value": 1 }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Battery (%)" },
+            "properties": [
+              { "id": "unit", "value": "percent" },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "red", "value": null },
+                    { "color": "orange", "value": 20 },
+                    { "color": "green", "value": 40 }
+                  ]
+                }
+              },
+              { "id": "custom.cellOptions", "value": { "type": "color-background", "mode": "gradient" } }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "table",
+      "title": "Low battery (<30%)",
+      "gridPos": { "h": 12, "w": 8, "x": 16, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "madcap_rider_battery_pct{slug=\"$slug\"} < 30",
+          "refId": "A",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true, "__name__": true, "job": true, "instance": true, "slug": true
+            },
+            "renameByName": {
+              "Value": "Battery %",
+              "bib": "Bib",
+              "name": "Name",
+              "category": "Category"
+            },
+            "indexByName": {
+              "Value": 0, "Bib": 1, "Name": 2, "Category": 3
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": { "fields": {}, "sort": [{ "field": "Battery %" }] }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "left" }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Battery %" },
+            "properties": [
+              { "id": "unit", "value": "percent" },
+              {
+                "id": "custom.cellOptions",
+                "value": { "type": "color-background", "mode": "gradient" }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "red", "value": null },
+                    { "color": "orange", "value": 20 },
+                    { "color": "green", "value": 40 }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+
+    {
+      "type": "timeseries",
+      "title": "Upstream refresh latency",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 26 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "madcap_fast_upstream_last_ms{slug=\"$slug\"}",
+          "legendFormat": "{{slug}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": { "drawStyle": "line", "fillOpacity": 20, "showPoints": "never" }
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Cache age & body size",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 26 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "madcap_fast_cache_age_seconds{slug=\"$slug\"}",
+          "legendFormat": "age (s)",
+          "refId": "A"
+        },
+        {
+          "expr": "madcap_fast_cache_body_bytes{slug=\"$slug\"} / 1024 / 1024",
+          "legendFormat": "body (MB)",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "fillOpacity": 20, "showPoints": "never" }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byFrameRefID", "options": "A" },
+            "properties": [{ "id": "unit", "value": "s" }]
+          },
+          {
+            "matcher": { "id": "byFrameRefID", "options": "B" },
+            "properties": [{ "id": "unit", "value": "decmbytes" }]
+          }
+        ]
+      }
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["madcap_fast", "race"],
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": false, "text": "desertus-bikus-26", "value": "desertus-bikus-26" },
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(madcap_event_total_km, slug)",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Event",
+        "multi": false,
+        "name": "slug",
+        "options": [],
+        "query": { "query": "label_values(madcap_event_total_km, slug)", "refId": "PrometheusVariableQueryEditor-VariableQuery" },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": { "selected": false, "text": "20", "value": "20" },
+        "hide": 0,
+        "includeAll": false,
+        "label": "Top N riders",
+        "multi": false,
+        "name": "topn",
+        "options": [
+          { "selected": false, "text": "5",  "value": "5"  },
+          { "selected": false, "text": "10", "value": "10" },
+          { "selected": true,  "text": "20", "value": "20" },
+          { "selected": false, "text": "50", "value": "50" },
+          { "selected": false, "text": "100","value": "100"}
+        ],
+        "query": "5,10,20,50,100",
+        "queryValue": "",
+        "skipUrlSync": false,
+        "type": "custom"
+      }
+    ]
+  },
+  "time": { "from": "now-12h", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "madcap_fast — race",
+  "uid": "madcap-race",
+  "version": 1,
+  "weekStart": ""
+}

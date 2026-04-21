@@ -6,8 +6,8 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Entries 
 
 ## [Unreleased]
 
-### Added
-- **`docker-compose.monitoring.yml`** — sibling stack that brings up Prometheus and Grafana with 90-day retention and auto-provisions Prometheus as Grafana's default data source. `docker compose -f docker-compose.monitoring.yml up -d` → Grafana on `:3000`, Prometheus on `:9090`. Env overrides: `PROMETHEUS_PORT`, `GRAFANA_PORT`, `GRAFANA_USER`, `GRAFANA_PASSWORD`. Scrape config in `monitoring/prometheus.yml` points at `host.docker.internal:9004` (Linux-compat via `extra_hosts: host-gateway`). README's optional-monitoring section now references these files instead of inlining snippets.
+### Changed
+- **Monitoring stack split across the two compose files** — Prometheus now runs inside the main `docker-compose.yml` so metrics are scraped automatically whenever `madcap_fast` is up (90-day retention via a new `prometheus-data` named volume). Scrape config targets `madcap_fast:9004` by service name since they're on the same Docker network. `docker-compose.monitoring.yml` is now Grafana only — bring it up when you want dashboards without disturbing metric collection. Grafana reaches Prometheus via `host.docker.internal:9090` (`extra_hosts: host-gateway` for Linux). Previous Unreleased bullet (the "Grafana default host port is now 9006" entry from commit `0f5c51d`) is kept; the earlier combined "sibling stack" bullet is superseded by this split.
 
 ## [2026-04-21] 53874c1 — Metrics endpoint, CSV exports, Grafana how-to
 

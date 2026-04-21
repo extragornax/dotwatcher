@@ -6,11 +6,8 @@ scrape_configs:
   - job_name: madcap_fast
     metrics_path: /metrics
     static_configs:
-      - targets:
-          # madcap_fast is reached via the host bridge. If you run the
-          # main compose stack and this file on the same Docker network,
-          # replace with "madcap_fast:9004" and add that network below.
-          - host.docker.internal:9004
+      # Same compose network as madcap_fast → reach it by service name.
+      - targets: ["madcap_fast:9004"]
         labels:
           instance: madcap_fast
 

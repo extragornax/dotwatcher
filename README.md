@@ -230,23 +230,29 @@ rebuilds only recompile `src/`.
 
 ### Prometheus + Grafana (optional)
 
-`/metrics` is always on. A sibling stack is included:
+`/metrics` is always on. **Prometheus ships with the main compose stack**
+so metrics collection starts automatically whenever `madcap_fast` is up —
+you always have 90 days of operational history even without Grafana.
+**Grafana lives in a separate compose** so you can bring it up only when
+you actually want a dashboard, without disturbing metric collection.
 
 ```bash
-docker compose -f docker-compose.monitoring.yml up -d
-# Grafana   http://127.0.0.1:3000   (admin / admin — change it)
+docker compose up -d                                   # madcap_fast + prometheus
+docker compose -f docker-compose.monitoring.yml up -d  # + grafana
+# Grafana    http://127.0.0.1:9006   (admin / admin — change it)
 # Prometheus http://127.0.0.1:9090
 ```
 
 Files:
-- `docker-compose.monitoring.yml` — Prometheus + Grafana, named volumes
-  for TSDB and Grafana state, 90-day retention, runs independently of the
-  main `docker-compose.yml`.
-- `monitoring/prometheus.yml` — scrape config pointing at
-  `host.docker.internal:9004`. If you later put both stacks on the same
-  Docker network, swap that target for `madcap_fast:9004`.
+- `docker-compose.yml` — now also runs **Prometheus** alongside
+  `madcap_fast` (same Docker network, so Prometheus scrapes `madcap_fast:9004`
+  by service name). Named volume `prometheus-data`, 90-day retention.
+- `docker-compose.monitoring.yml` — Grafana only; reaches Prometheus
+  via `host.docker.internal:9090` (`extra_hosts: host-gateway` handles
+  Linux). Named volume `grafana-data` for its own state.
+- `monitoring/prometheus.yml` — scrape config targeting `madcap_fast:9004`.
 - `monitoring/grafana/provisioning/datasources/prometheus.yml` — auto-wires
-  Prometheus as the default Grafana data source on first boot.
+  Prometheus as Grafana's default data source on first boot.
 
 Env overrides: `PROMETHEUS_PORT`, `GRAFANA_PORT`, `GRAFANA_USER`,
 `GRAFANA_PASSWORD`.

@@ -220,6 +220,18 @@ runs as a non-root user under `tini`, and drops all capabilities. Healthcheck
 hits `/` every 30 s. First build takes ~90 s (deps cached layer), incremental
 rebuilds only recompile `src/`.
 
+### Auto-deploy from GitHub
+
+`.github/workflows/deploy.yml` SSHes into a target host on every push to
+`master` (and supports manual `workflow_dispatch`), does `git pull --ff-only`
++ `docker compose up -d --build`, then polls the container's health status
+until it reports `healthy`.
+
+Required GitHub **secrets**: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`
+(and optionally `DEPLOY_PORT`). Optional repo **variable**: `DEPLOY_PATH`
+(defaults to `/srv/madcap_fast`). Full setup notes are in the comment header
+of the workflow file.
+
 ### Config (env vars, both modes)
 
 | var                | default               | meaning                                      |

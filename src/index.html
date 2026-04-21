@@ -653,7 +653,12 @@
   }
   function utcMs(s) { const d = parseUtc(s); return d ? d.getTime() : null; }
 
-  const fmtKm = (m) => (m == null ? '—' : (+m).toFixed(1) + ' km');
+  const fmtKm = (m) => {
+    if (m == null) return '—';
+    const n = typeof m === 'object' ? m.distance : m;
+    if (n == null || isNaN(+n)) return '—';
+    return (+n).toFixed(1) + ' km';
+  };
   const fmtKmh = (v) => (v == null ? '—' : (+v).toFixed(1) + ' km/h');
   const fmtTime = (iso) => {
     if (!iso) return '—';

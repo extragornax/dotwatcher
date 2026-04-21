@@ -11,11 +11,13 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Entries 
 - **100 km segments** — second split table below the CP segments, bucketing the track by every 100 km of actual distance covered (haversine along the points) with the same rank + gap columns. Markers per rider are cached by `state.tracks` identity so repeated detail views don't recompute.
 - **Marker clustering** on the map via `leaflet.markercluster` — rider markers now cluster below zoom 11, keeping the zoomed-out view legible with 300+ riders. Cluster bubbles are themed to match the dark UI (green / amber / red based on cluster size).
 - **Course elevation banner** at the top of the map (toggle `elev` in the overlay, default on). Profile derived from the leading rider's track (the one who's covered the most ground); a gold vertical cursor shows where the 🌵 cactus pacer is, so it also reflects the scrubber. Persisted in `localStorage:madcap_map_elev`.
+- **GitHub Actions auto-deploy** — `.github/workflows/deploy.yml` SSHes into a host on every push to `master` (or manual `workflow_dispatch`), runs `git pull --ff-only` + `docker compose up -d --build`, then polls the container's healthcheck until it's `healthy`. Parameterized via repo secrets (`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, optional `DEPLOY_PORT`) and an optional `DEPLOY_PATH` variable (default `/srv/madcap_fast`). README gained a short "Auto-deploy from GitHub" section.
 
 ### Changed
 - **Default bind port is now `9004`** (was `8080`) — matches what `docker-compose.yml` was already exposing on the host. Updated in `src/main.rs`, `Dockerfile`, `docker-compose.yml`, and README.
 
 ### Fixed
+- **"To next CP" no longer shows `NaN km`** — upstream sends `distance_to_next_cp` as `{ cp_id, distance }`, not a scalar. `fmtKm` now unwraps objects and returns `—` on missing / NaN values.
 - **Map no longer crashes with "Map has no maxZoom specified"** — `leaflet.markercluster` refuses to attach to a map with no `maxZoom`; added `maxZoom: 19` to `L.map()` options. Also falls back to a plain `L.layerGroup` if the cluster script failed to load, calls `refreshClusters()` after marker-position updates (cluster index would otherwise desync on `setLatLng`), and sets `pointer-events: none` on the elevation banner so it doesn't intercept zoom-control clicks.
 
 ### Changed

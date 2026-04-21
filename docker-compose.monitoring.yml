@@ -27,10 +27,16 @@ services:
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      # Public URL used to generate share/embed links. Set via env:
+      #   GF_SERVER_ROOT_URL=https://grafana.extragornax.fr/
+      #   GF_SERVER_DOMAIN=grafana.extragornax.fr
+      # Leave unset to keep the default (http://localhost:3000).
+      GF_SERVER_ROOT_URL: "${GF_SERVER_ROOT_URL:-}"
+      GF_SERVER_DOMAIN: "${GF_SERVER_DOMAIN:-}"
     volumes:
       - grafana-data:/var/lib/grafana
-      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./monitoring/grafana/dashboards:/etc/dashboards:ro
+     # - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+     # - ./monitoring/grafana/dashboards:/etc/dashboards:ro
     ports:
       - "${GRAFANA_PORT:-9007}:3000"
     networks:

@@ -261,7 +261,32 @@ Files:
 - `monitoring/grafana/provisioning/dashboards/dashboards.yml` + `monitoring/grafana/dashboards/madcap_fast-race.json` — auto-loaded multi-race dashboard. An **Event** dropdown lists every cached & live slug via `label_values(madcap_event_total_km, slug)`, plus a **Top N riders** slider. Panels: 6 stat cards (participants / active / started / sleeping / finished / course total), rank-over-time worms, distance-over-time, current leaderboard table (rank + bib + name + distance + speed + battery with color-gradient), low-battery watchlist, and the operational refresh-latency + cache-age trends. Folder in Grafana: **madcap_fast**.
 
 Env overrides: `PROMETHEUS_PORT`, `GRAFANA_PORT`, `GRAFANA_USER`,
-`GRAFANA_PASSWORD`.
+`GRAFANA_PASSWORD`, `GF_SERVER_ROOT_URL`, `GF_SERVER_DOMAIN`.
+
+#### Serving Grafana behind a public domain
+
+When Grafana is fronted by a reverse proxy (Caddy, nginx, …) at something
+like `https://grafana.extragornax.fr`, set two env vars so share / OAuth
+redirect URLs match the public hostname instead of `http://localhost:3000`:
+
+```bash
+export GF_SERVER_ROOT_URL=https://grafana.extragornax.fr/
+export GF_SERVER_DOMAIN=grafana.extragornax.fr
+docker compose -f docker-compose.monitoring.yml up -d --force-recreate grafana
+```
+
+Caddy snippet (auto-HTTPS, proxies to the host-bound port 9007):
+
+```caddy
+grafana.extragornax.fr {
+    reverse_proxy 127.0.0.1:9007
+}
+```
+
+Grafana reads `Host` / `X-Forwarded-*` correctly out of the box, so no
+extra header rewriting is needed. If you're behind Cloudflare and want
+to serve it on plain HTTP, use `http://grafana.extragornax.fr { … }` and
+keep `GF_SERVER_ROOT_URL=http://grafana.extragornax.fr/`.
 
 Once Grafana is up, build panels from queries like:
 

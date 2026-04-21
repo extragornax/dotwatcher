@@ -5,9 +5,11 @@ providers:
     orgId: 1
     folder: madcap_fast
     type: file
-    disableDeletion: false
+    # With a read-only bind-mount, Grafana must not try to delete files
+    # or write edits back to disk.
+    disableDeletion: true
+    allowUiUpdates: false
     updateIntervalSeconds: 30
-    allowUiUpdates: true
     options:
-      path: /var/lib/grafana/dashboards
+      path: /etc/dashboards
       foldersFromFilesStructure: false

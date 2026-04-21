@@ -6,6 +6,9 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Entries 
 
 ## [Unreleased]
 
+### Fixed
+- **Grafana no longer crash-loops on the provisioned dashboards mount.** The previous setup overlaid `./monitoring/grafana/dashboards` onto `/var/lib/grafana/dashboards`, which lives inside Grafana's protected data directory — Grafana's startup tried to manage that directory as its own and failed. The bind-mount now lands at `/etc/dashboards` (outside the data dir), the provider config points at the same new path, and `disableDeletion: true` + `allowUiUpdates: false` match the read-only mount so Grafana never tries to write there.
+
 ### Changed
 - **Grafana default host port moved from 9006 to 9007** — `9006` collided with another service; `9007` keeps everything in the 900x band (`madcap_fast:9004`, `prometheus:9090` loopback, `grafana:9007`). Override with `GRAFANA_PORT` if you need something else.
 

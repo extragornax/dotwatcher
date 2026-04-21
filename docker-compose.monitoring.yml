@@ -30,7 +30,7 @@ services:
     volumes:
       - grafana-data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./monitoring/grafana/dashboards:/etc/dashboards:ro
     ports:
       - "${GRAFANA_PORT:-9007}:3000"
     networks:

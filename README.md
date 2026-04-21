@@ -244,12 +244,16 @@ docker compose -f docker-compose.monitoring.yml up -d  # + grafana
 ```
 
 Files:
-- `docker-compose.yml` — now also runs **Prometheus** alongside
-  `madcap_fast` (same Docker network, so Prometheus scrapes `madcap_fast:9004`
-  by service name). Named volume `prometheus-data`, 90-day retention.
-- `docker-compose.monitoring.yml` — Grafana only; reaches Prometheus
-  via `host.docker.internal:9090` (`extra_hosts: host-gateway` handles
-  Linux). Named volume `grafana-data` for its own state.
+- `docker-compose.yml` — runs **Prometheus** alongside `madcap_fast` on a
+  shared `madcap_fast_monitoring` Docker network so Prometheus scrapes
+  `madcap_fast:9004` by service name. Named volume `prometheus-data`,
+  90-day retention. Prometheus's `:9090` is bound to `127.0.0.1` only —
+  **not reachable from the public IP**; drop the `ports:` block entirely
+  to make it container-only.
+- `docker-compose.monitoring.yml` — Grafana only; joins the same
+  `madcap_fast_monitoring` network (as `external`) and reaches Prometheus
+  by service name (`http://prometheus:9090`). Named volume `grafana-data`
+  for its own state.
 - `monitoring/prometheus.yml` — scrape config targeting `madcap_fast:9004`.
 - `monitoring/grafana/provisioning/datasources/prometheus.yml` — auto-wires
   Prometheus as Grafana's default data source on first boot.

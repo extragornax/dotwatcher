@@ -4,9 +4,10 @@ datasources:
   - name: Prometheus
     type: prometheus
     access: proxy
-    # Prometheus runs in the main docker-compose stack; Grafana reaches it
-    # via the host bridge (see `extra_hosts` in docker-compose.monitoring.yml).
-    url: http://host.docker.internal:9090
+    # Prometheus runs in the main docker-compose stack. Grafana joins the
+    # shared `madcap_fast_monitoring` network so it reaches Prometheus by
+    # service name (no host bridge, no public IP exposure).
+    url: http://prometheus:9090
     isDefault: true
     editable: true
     jsonData:

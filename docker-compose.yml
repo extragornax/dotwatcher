@@ -24,6 +24,9 @@ services:
     read_only: true
     cap_drop:
       - ALL
+    networks:
+      - default
+      - monitoring
 
   prometheus:
     image: prom/prometheus:latest
@@ -37,10 +40,20 @@ services:
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
+    # Bind only to loopback — Prometheus is not reachable from the public IP.
+    # Other containers reach it via the `monitoring` network by service name.
+    # Drop the entire `ports:` block if you never want to curl it from the host.
     ports:
-      - "${PROMETHEUS_PORT:-9090}:9090"
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
     depends_on:
       - madcap_fast
+    networks:
+      - monitoring
+
+networks:
+  default:
+  monitoring:
+    name: madcap_fast_monitoring
 
 volumes:
   cache:

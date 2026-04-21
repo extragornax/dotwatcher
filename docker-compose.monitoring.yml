@@ -1,17 +1,20 @@
 # Optional sibling stack: Grafana only.
 #
-# Prometheus now runs inside the main `docker-compose.yml` (so metrics are
-# scraped automatically whenever madcap_fast is up). This stack is a
+# Prometheus runs inside the main `docker-compose.yml` so metrics are
+# scraped automatically whenever madcap_fast is up. This stack is a
 # separate lifecycle for Grafana — bring it up only when you want a
 # dashboard; teardown doesn't affect metric collection or retention.
 #
-# Usage:
-#   docker compose -f docker-compose.monitoring.yml up -d
-#   open http://127.0.0.1:9006  (grafana, admin / admin — change it)
+# Grafana joins the `madcap_fast_monitoring` docker network (created by
+# the main compose) so it reaches Prometheus by service name
+# (`prometheus:9090`) instead of via the host bridge. That network is
+# not published on the public IP, so Prometheus stays private to
+# containers.
 #
-# Grafana reaches the Prometheus container on the host bridge
-# (`host.docker.internal:9090`). `extra_hosts: host-gateway` maps that
-# name on Linux; it already works on Mac / Windows Docker Desktop.
+# Usage:
+#   docker compose up -d                                   # main stack (brings prometheus up)
+#   docker compose -f docker-compose.monitoring.yml up -d  # + grafana
+#   open http://127.0.0.1:9006  (grafana, admin / admin — change it)
 
 services:
   grafana:
@@ -29,8 +32,15 @@ services:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
     ports:
       - "${GRAFANA_PORT:-9006}:3000"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      - monitoring
+
+networks:
+  default:
+  monitoring:
+    name: madcap_fast_monitoring
+    external: true
 
 volumes:
   grafana-data:

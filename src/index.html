@@ -449,9 +449,7 @@
   const prevLongStopKey = new Map();
 
   let feedFilter = 'all';
-  let overtakes = []; // rolling, newest first
-  const OVERTAKES_LIMIT = 200;
-  let prevOverallRanks = null;
+  let overtakes = []; // rolling, newest first — fetched from /api/event/:slug/overtakes
 
   let cactusPath = null;
   let cactusMarker = null;
@@ -747,7 +745,7 @@
     }
 
     render();
-    trackOvertakes();
+    loadOvertakes();
     runNotificationChecks();
   }
 
@@ -1389,24 +1387,18 @@
     document.getElementById('side-menu').setAttribute('aria-hidden', 'true');
   }
 
-  function trackOvertakes() {
-    if (!state || !state.participants) return;
-    const curRanks = new Map();
-    for (const p of state.participants) {
-      if (p.overall_rank != null) curRanks.set(p.id, p.overall_rank);
+  async function loadOvertakes() {
+    if (!slug) return;
+    try {
+      const res = await fetch(`/api/event/${encodeURIComponent(slug)}/overtakes`);
+      if (!res.ok) return;
+      const arr = await res.json();
+      // server sends {t: unix_s, pid, from, to}; feed renderer expects tMs
+      overtakes = (arr || []).map(o => ({ tMs: (o.t || 0) * 1000, pid: o.pid, from: o.from, to: o.to }));
+      if (currentTab === 'feed') renderFeed();
+    } catch {
+      // keep whatever we had; server may be restarting
     }
-    if (prevOverallRanks) {
-      const nowMs = Date.now();
-      for (const [pid, curRank] of curRanks) {
-        const prevRank = prevOverallRanks.get(pid);
-        if (prevRank == null) continue;
-        if (curRank < prevRank) {
-          overtakes.unshift({ tMs: nowMs, pid, from: prevRank, to: curRank });
-        }
-      }
-      if (overtakes.length > OVERTAKES_LIMIT) overtakes.length = OVERTAKES_LIMIT;
-    }
-    prevOverallRanks = curRanks;
   }
 
   function renderFeed() {

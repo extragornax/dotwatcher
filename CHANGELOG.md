@@ -6,6 +6,9 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Entries 
 
 ## [Unreleased]
 
+### Fixed
+- **Overtake feed history survives restarts and is the same for every viewer.** Previously each browser tracked its own in-memory `overtakes` array that reset on every page reload. Tracking moved server-side: `EventCache` now carries a rolling `VecDeque<OvertakeRecord>` (capped at 500) plus a `prev_ranks` map; the refresher diffs new vs old `overall_rank` per rider and pushes any improvements into the deque. The deque is atomically written to `<cache_dir>/overtakes/<slug>.json` on every refresh and read back on boot via `restore_from_disk` (which also seeds `prev_ranks` from the restored snapshot so the next refresh can detect changes). New endpoint `GET /api/event/{slug}/overtakes` returns the deque as JSON. The frontend's `trackOvertakes` + `prevOverallRanks` are gone; replaced by `loadOvertakes()` which fetches from the new endpoint on each poll and whenever the Feed tab renders.
+
 ### Added
 - **`TOPN` env var in `setup-public-dashboards.sh`** — bakes the `topn` variable default into every per-slug clone (e.g. `TOPN=50 ./monitoring/setup-public-dashboards.sh`). Value is validated as a positive integer, injected into `.current` and marked `selected: true` on the matching option (added to the options list if not already present).
 

@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     fmt::Write as _,
     net::SocketAddr,
     path::{Path as FsPath, PathBuf},
@@ -7,6 +7,8 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+
+use serde::Deserialize;
 
 use anyhow::{Context, Result};
 use axum::{
@@ -40,12 +42,30 @@ struct Snapshot {
     upstream_ms: u64,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct OvertakeRecord {
+    /// Unix seconds when the overtake was detected.
+    t: i64,
+    /// Participant id.
+    pid: String,
+    /// Overall rank before the refresh that produced the overtake.
+    from: i64,
+    /// Overall rank after.
+    to: i64,
+}
+
+const OVERTAKES_MAX: usize = 500;
+
 struct EventCache {
     snapshot: RwLock<Option<Snapshot>>,
     slug: String,
     /// Pre-rendered race-metric value lines (no HELP/TYPE); refreshed after
     /// each successful fetch and stitched into `/metrics`.
     race_metrics: RwLock<Option<String>>,
+    /// Rolling overtake history, newest first, capped at OVERTAKES_MAX.
+    overtakes: RwLock<VecDeque<OvertakeRecord>>,
+    /// Last seen `overall_rank` per participant id, used to compute overtakes.
+    prev_ranks: RwLock<Option<HashMap<String, i64>>>,
 }
 
 struct EventsListCache {
@@ -72,6 +92,43 @@ struct AppState {
 
 fn event_cache_path(dir: &FsPath, slug: &str) -> PathBuf {
     dir.join("events").join(format!("{slug}.json"))
+}
+
+fn overtakes_cache_path(dir: &FsPath, slug: &str) -> PathBuf {
+    dir.join("overtakes").join(format!("{slug}.json"))
+}
+
+fn load_overtakes_from_disk(dir: &FsPath, slug: &str) -> VecDeque<OvertakeRecord> {
+    let path = overtakes_cache_path(dir, slug);
+    let Ok(bytes) = std::fs::read(&path) else {
+        return VecDeque::new();
+    };
+    match serde_json::from_slice::<VecDeque<OvertakeRecord>>(&bytes) {
+        Ok(v) => {
+            info!(slug = %slug, count = v.len(), "restored overtake history from disk");
+            v
+        }
+        Err(e) => {
+            warn!(slug = %slug, error = %e, "overtake history parse failed");
+            VecDeque::new()
+        }
+    }
+}
+
+/// Extract `{participant_id → overall_rank}` from a combined body so we can
+/// diff successive refreshes.
+fn ranks_from_body(body: &[u8]) -> Option<HashMap<String, i64>> {
+    let v: Value = serde_json::from_slice(body).ok()?;
+    let participants = v.get("participants")?.as_array()?;
+    let mut out = HashMap::with_capacity(participants.len());
+    for p in participants {
+        let pid = p.get("id").and_then(|v| v.as_str())?;
+        let Some(r) = p.get("overall_rank").and_then(|v| v.as_i64()) else {
+            continue;
+        };
+        out.insert(pid.to_string(), r);
+    }
+    Some(out)
 }
 
 fn events_list_cache_path(dir: &FsPath) -> PathBuf {
@@ -299,6 +356,8 @@ async fn ensure_cache(state: &Arc<AppState>, slug: &str) -> Arc<EventCache> {
         snapshot: RwLock::new(None),
         slug: slug.to_string(),
         race_metrics: RwLock::new(None),
+        overtakes: RwLock::new(VecDeque::new()),
+        prev_ranks: RwLock::new(None),
     });
     w.insert(slug.to_string(), cache.clone());
     spawn_refresher(
@@ -344,10 +403,16 @@ async fn restore_from_disk(state: &Arc<AppState>) {
             match snapshot_from_bytes(bytes, 0).await {
                 Ok(snap) => {
                     let race_metrics = render_event_race_metrics(&slug, &snap.body);
+                    // Seed ranks from the restored snapshot so the first
+                    // post-boot refresh can detect overtakes.
+                    let seeded_ranks = ranks_from_body(&snap.body);
+                    let overtakes = load_overtakes_from_disk(&dir, &slug);
                     let cache = Arc::new(EventCache {
                         snapshot: RwLock::new(Some(snap)),
                         slug: slug.clone(),
                         race_metrics: RwLock::new(race_metrics),
+                        overtakes: RwLock::new(overtakes),
+                        prev_ranks: RwLock::new(seeded_ranks),
                     });
                     state.events.write().await.insert(slug.clone(), cache.clone());
                     spawn_refresher(
@@ -403,6 +468,46 @@ fn spawn_refresher(
                     metrics.refreshes.fetch_add(1, Ordering::Relaxed);
                     let rendered = render_event_race_metrics(&cache.slug, &snap.body);
                     *cache.race_metrics.write().await = rendered;
+
+                    // Compute new overtakes from rank diffs, update the
+                    // in-memory rolling deque, then persist it to disk.
+                    if let Some(new_ranks) = ranks_from_body(&snap.body) {
+                        let now = now_unix_s();
+                        let mut dq = cache.overtakes.write().await;
+                        let mut prev = cache.prev_ranks.write().await;
+                        if let Some(prev_map) = prev.as_ref() {
+                            for (pid, &cur_rank) in &new_ranks {
+                                if let Some(&prev_rank) = prev_map.get(pid) {
+                                    if cur_rank < prev_rank {
+                                        dq.push_front(OvertakeRecord {
+                                            t: now,
+                                            pid: pid.clone(),
+                                            from: prev_rank,
+                                            to: cur_rank,
+                                        });
+                                    }
+                                }
+                            }
+                            while dq.len() > OVERTAKES_MAX {
+                                dq.pop_back();
+                            }
+                        }
+                        *prev = Some(new_ranks);
+                        if let Some(dir) = &cache_dir {
+                            match serde_json::to_vec(&*dq) {
+                                Ok(bytes) => {
+                                    let path = overtakes_cache_path(dir, &cache.slug);
+                                    if let Err(e) = persist_bytes(&path, &bytes) {
+                                        warn!(slug = %cache.slug, error = %e, "overtakes persist failed");
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!(slug = %cache.slug, error = %e, "overtakes serialize failed");
+                                }
+                            }
+                        }
+                    }
+
                     *cache.snapshot.write().await = Some(snap);
                 }
                 Err(e) => {
@@ -1046,6 +1151,31 @@ async fn event_csv_handler(
     (StatusCode::OK, h, csv).into_response()
 }
 
+async fn overtakes_handler(
+    State(state): State<Arc<AppState>>,
+    Path(slug): Path<String>,
+) -> Response {
+    if !slug_ok(&slug) {
+        return (StatusCode::BAD_REQUEST, "bad slug").into_response();
+    }
+    let cache = ensure_cache(&state, &slug).await;
+    let dq = cache.overtakes.read().await.clone();
+    let body = match serde_json::to_vec(&dq) {
+        Ok(b) => b,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "serialize").into_response(),
+    };
+    let mut h = HeaderMap::new();
+    h.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json; charset=utf-8"),
+    );
+    h.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=15"),
+    );
+    (StatusCode::OK, h, body).into_response()
+}
+
 async fn events_csv_handler(State(state): State<Arc<AppState>>) -> Response {
     state.metrics.csv_exports.fetch_add(1, Ordering::Relaxed);
     let deadline = Instant::now() + Duration::from_secs(20);
@@ -1178,6 +1308,7 @@ async fn main() -> Result<()> {
         .route("/event/{slug}", get(index))
         .route("/api/event/{slug}", get(combined_handler))
         .route("/api/event/{slug}/csv", get(event_csv_handler))
+        .route("/api/event/{slug}/overtakes", get(overtakes_handler))
         .route("/api/events", get(events_list_handler))
         .route("/api/events/csv", get(events_csv_handler))
         .route("/metrics", get(metrics_handler))

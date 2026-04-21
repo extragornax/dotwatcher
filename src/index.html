@@ -1708,6 +1708,70 @@
     `;
   }
 
+  function rollingAvgSpeed(track, windowSec = 3600) {
+    if (!track || !track.length) return null;
+    const tN = track[track.length - 1][0];
+    const threshold = tN - windowSec;
+    let sum = 0, n = 0;
+    for (let i = track.length - 1; i >= 0; i--) {
+      if (track[i][0] < threshold) break;
+      const s = track[i][4];
+      if (s != null && !isNaN(s)) { sum += s; n++; }
+    }
+    return n > 0 ? sum / n : null;
+  }
+
+  function courseTotalKm() {
+    const cp = computeCactusPath();
+    if (cp && cp.total) return cp.total;
+    const raw = state && state.info && state.info.distance;
+    if (!raw) return null;
+    const n = parseFloat(String(raw).replace(/[^\d.]/g, ''));
+    return isFinite(n) && n > 0 ? n : null;
+  }
+
+  function trackOf(pid) {
+    return ((state.tracks && state.tracks.tracks) || []).find(t => t.participant_id === pid);
+  }
+
+  function etaNextCpMs(p) {
+    const d = p.distance_to_next_cp;
+    const km = (d && typeof d === 'object') ? d.distance : d;
+    if (km == null || isNaN(+km) || +km <= 0) return null;
+    let speed = p.speed;
+    if (!speed || speed < 3) {
+      const tr = trackOf(p.id);
+      const rolling = rollingAvgSpeed(tr && tr.track);
+      if (rolling && rolling > 2) speed = rolling;
+    }
+    if (!speed || speed < 1) return null;
+    return (+km / speed) * 3600 * 1000;
+  }
+
+  function etaFinishMs(p) {
+    const total = courseTotalKm();
+    if (!total || p.distance == null) return null;
+    const remaining = total - p.distance;
+    if (remaining <= 0.5) return null;
+    const tr = trackOf(p.id);
+    let speed = rollingAvgSpeed(tr && tr.track);
+    if (!speed || speed < 1) {
+      const start = eventStartMs();
+      if (start && p.distance > 0) {
+        const hours = (Date.now() - start) / 3600000;
+        if (hours > 0) speed = p.distance / hours;
+      }
+    }
+    if (!speed || speed < 1) return null;
+    return Date.now() + (remaining / speed) * 3600 * 1000;
+  }
+
+  function fmtEtaDur(ms) { return ms == null ? '—' : fmtDur(ms / 1000); }
+  function fmtEtaAt(ms) {
+    if (ms == null) return '—';
+    return new Date(ms).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+  }
+
   let topSpeedsCache = { tracks: null, list: null };
   function computeTopSpeeds() {
     if (!state || !state.tracks) return [];
@@ -1995,6 +2059,8 @@
         <div class="stat"><div class="label">Distance</div><div class="value">${fmtKm(p.distance)}</div></div>
         <div class="stat"><div class="label">Speed</div><div class="value">${fmtKmh(p.speed)}</div></div>
         <div class="stat"><div class="label">To next CP</div><div class="value">${fmtKm(p.distance_to_next_cp)}</div></div>
+        <div class="stat"><div class="label">ETA next CP</div><div class="value">${fmtEtaDur(etaNextCpMs(p))}</div></div>
+        <div class="stat"><div class="label">ETA finish</div><div class="value">${fmtEtaAt(etaFinishMs(p))}</div></div>
         <div class="stat"><div class="label">Overall rank</div><div class="value">#${p.overall_rank ?? '-'}</div></div>
         <div class="stat"><div class="label">Category rank</div><div class="value">#${p.rank ?? '-'}</div></div>
         <div class="stat"><div class="label">Last ping</div><div class="value">${sinceText(p.last_ping)}</div></div>

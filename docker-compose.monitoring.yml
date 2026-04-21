@@ -18,7 +18,12 @@
 
 services:
   grafana:
-    image: grafana/grafana:latest
+    # Pinned: Grafana 12+ ships the Kubernetes-style dashboard API
+    # (`/apis/dashboard.grafana.app/v2`) by default, which rejects
+    # anonymous reads with 403. 11.3.0 still serves dashboards via the
+    # classic `/api/dashboards/...` path, so `GF_AUTH_ANONYMOUS_ENABLED`
+    # + `Viewer` role actually lets visitors read the board.
+    image: grafana/grafana:11.3.0
     container_name: madcap_fast_grafana
     restart: unless-stopped
     environment:

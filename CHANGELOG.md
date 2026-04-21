@@ -10,6 +10,9 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Entries 
 - **Anonymous read-only Grafana access (default on)** — `GF_AUTH_ANONYMOUS_ENABLED=true`, `GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer`, `GF_AUTH_ANONYMOUS_HIDE_VERSION=true`. Visitors to the Grafana URL (e.g. `https://grafana.extragornax.fr`) land straight on the dashboards without logging in, with `Viewer` role — no edits, no share-panel mutations, no datasource changes. Flip `GF_AUTH_ANONYMOUS_ENABLED=false` to require login.
 
 ### Fixed
+- **Anonymous dashboard reads stopped returning 403.** Grafana 12+'s new Kubernetes-style dashboard API (`/apis/dashboard.grafana.app/v2`) refuses anonymous GETs even with `Viewer` role; the old `/api/dashboards/...` path is still open. Pinned the container to `grafana/grafana:11.3.0`, which uses the classic path, so anonymous visitors can actually load the dashboard. Schema version 39 in our JSON is compatible with 11.3.
+
+### Fixed
 - **Grafana no longer crash-loops on the provisioned dashboards mount.** The previous setup overlaid `./monitoring/grafana/dashboards` onto `/var/lib/grafana/dashboards`, which lives inside Grafana's protected data directory — Grafana's startup tried to manage that directory as its own and failed. The bind-mount now lands at `/etc/dashboards` (outside the data dir), the provider config points at the same new path, and `disableDeletion: true` + `allowUiUpdates: false` match the read-only mount so Grafana never tries to write there.
 
 ### Changed

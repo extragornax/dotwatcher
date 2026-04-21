@@ -645,6 +645,16 @@ fn parse_km_prefix(s: &str) -> Option<f64> {
 
 /// Parse the `/api/event/{slug}` cached body and emit per-rider + per-event
 /// Prometheus value lines (no HELP/TYPE — those are emitted once in `/metrics`).
+/// Statuses that mean the rider isn't part of the active race (withdrawn,
+/// disqualified, never made it to the start line). We skip them entirely —
+/// no per-rider metrics and they don't count toward participants/active/etc.
+fn is_racing_status(status: &str) -> bool {
+    !matches!(
+        status.to_ascii_uppercase().as_str(),
+        "DNF" | "DNS" | "SCRATCH" | "SCRATCHED" | "DSQ" | "DISQUALIFIED"
+    )
+}
+
 fn render_event_race_metrics(slug: &str, body: &[u8]) -> Option<String> {
     let v: Value = serde_json::from_slice(body).ok()?;
     let info = v.get("info")?;
@@ -673,10 +683,18 @@ fn render_event_race_metrics(slug: &str, body: &[u8]) -> Option<String> {
         out,
         "madcap_event_total_km{{slug=\"{slug_esc}\"}} {total_km}"
     );
+
+    let racing: Vec<&Value> = participants
+        .iter()
+        .filter(|p| {
+            let s = p.get("status").and_then(|v| v.as_str()).unwrap_or("");
+            is_racing_status(s)
+        })
+        .collect();
     let _ = writeln!(
         out,
         "madcap_event_participants{{slug=\"{slug_esc}\"}} {}",
-        participants.len()
+        racing.len()
     );
 
     let mut active: u32 = 0;
@@ -684,7 +702,7 @@ fn render_event_race_metrics(slug: &str, body: &[u8]) -> Option<String> {
     let mut started: u32 = 0;
     let mut finished: u32 = 0;
 
-    for p in participants {
+    for p in racing {
         let bib = p.get("bib").and_then(|v| v.as_str()).unwrap_or("");
         let first = p.get("first_name").and_then(|v| v.as_str()).unwrap_or("");
         let last = p.get("last_name").and_then(|v| v.as_str()).unwrap_or("");

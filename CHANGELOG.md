@@ -7,6 +7,12 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Entries 
 ## [Unreleased]
 
 ### Added
+- **`TOPN` env var in `setup-public-dashboards.sh`** — bakes the `topn` variable default into every per-slug clone (e.g. `TOPN=50 ./monitoring/setup-public-dashboards.sh`). Value is validated as a positive integer, injected into `.current` and marked `selected: true` on the matching option (added to the options list if not already present).
+
+### Changed
+- **Race metrics skip DNF / DNS / SCRATCH / DSQ riders.** `render_event_race_metrics` filters participants by `status` before counting or emitting any per-rider gauge, so withdrawn or disqualified riders no longer inflate `madcap_event_participants` / `_active` / `_started` and don't pollute the per-rider series.
+
+### Added
 - **"Nearby riders" section in the detail view** — for the selected rider, a table of the 10 closest other riders by straight-line distance (haversine on their latest GPS fixes, honouring the scrubber). Shows overall rank, name, star, staff badge, gap in km, and a coloured ± course-distance delta. Clicking a name opens that rider's detail.
 - **Overtake feed** — every refresh diffs `overall_rank` against the previous snapshot. When a rider's rank improves, a lightweight entry is pushed into a rolling `overtakes` array (newest first, capped at 200). The Feed tab gained an **Overtakes** filter and the "All" view now merges overtakes with journal entries, sorted by timestamp. Each entry shows the rider, places gained, rank arrow, relative + absolute time, and links to their detail.
 - **`monitoring/setup-public-dashboards.sh`** — one-shot / idempotent bash script that clones the `madcap-race` dashboard once per slug currently emitting race metrics (uid becomes `madcap-race-<slug>`, the `slug` variable is pinned and hidden, title includes the slug), upserts each clone via Grafana's API, enables its public dashboard, and prints the resulting `…/public-dashboards/<accessToken>` URLs. Requires `curl` + `jq`; Grafana admin creds via `GRAFANA_USER` / `GRAFANA_PASSWORD`.

@@ -21,6 +21,8 @@
 #   GRAFANA_USER      default admin
 #   GRAFANA_PASSWORD  default admin
 #   BASE_UID          default madcap-race
+#   TOPN              default 20 (bakes `topn` variable default into the
+#                                   cloned dashboard; any positive integer)
 #
 # Example:
 #   MADCAP_FAST_URL=http://madcap.extragornax.fr \
@@ -35,6 +37,12 @@ GRAFANA_URL="${GRAFANA_URL:-http://localhost:9007}"
 GRAFANA_USER="${GRAFANA_USER:-admin}"
 GRAFANA_PASSWORD="${GRAFANA_PASSWORD:-admin}"
 BASE_UID="${BASE_UID:-madcap-race}"
+TOPN="${TOPN:-20}"
+
+if ! [[ "$TOPN" =~ ^[0-9]+$ ]] || [[ "$TOPN" -lt 1 ]]; then
+  echo "TOPN must be a positive integer, got: $TOPN" >&2
+  exit 1
+fi
 
 need() { command -v "$1" >/dev/null 2>&1 || { echo "missing dependency: $1" >&2; exit 1; }; }
 need curl
@@ -78,7 +86,8 @@ while IFS= read -r slug; do
   clone=$(echo "$base_dash" | jq \
     --arg uid "$new_uid" \
     --arg title "$new_title" \
-    --arg slug "$slug" '
+    --arg slug "$slug" \
+    --arg topn "$TOPN" '
       .id = null
       | .uid = $uid
       | .title = $title
@@ -88,6 +97,14 @@ while IFS= read -r slug; do
             .current = { "selected": false, "text": $slug, "value": $slug }
             | .hide = 2
             | .options = [{ "selected": true, "text": $slug, "value": $slug }]
+          elif .name == "topn" then
+            .current = { "selected": true, "text": $topn, "value": $topn }
+            | .options = (
+                (.options // []) | map(.selected = false)
+                | (if (map(.value) | index($topn)) then .
+                   else . + [{ "selected": false, "text": $topn, "value": $topn }] end)
+                | map(if .value == $topn then .selected = true else . end)
+              )
           else . end
         ))
     ')

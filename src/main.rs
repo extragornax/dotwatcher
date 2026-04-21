@@ -43,6 +43,9 @@ struct Snapshot {
 struct EventCache {
     snapshot: RwLock<Option<Snapshot>>,
     slug: String,
+    /// Pre-rendered race-metric value lines (no HELP/TYPE); refreshed after
+    /// each successful fetch and stitched into `/metrics`.
+    race_metrics: RwLock<Option<String>>,
 }
 
 struct EventsListCache {
@@ -295,6 +298,7 @@ async fn ensure_cache(state: &Arc<AppState>, slug: &str) -> Arc<EventCache> {
     let cache = Arc::new(EventCache {
         snapshot: RwLock::new(None),
         slug: slug.to_string(),
+        race_metrics: RwLock::new(None),
     });
     w.insert(slug.to_string(), cache.clone());
     spawn_refresher(
@@ -339,9 +343,11 @@ async fn restore_from_disk(state: &Arc<AppState>) {
             };
             match snapshot_from_bytes(bytes, 0).await {
                 Ok(snap) => {
+                    let race_metrics = render_event_race_metrics(&slug, &snap.body);
                     let cache = Arc::new(EventCache {
                         snapshot: RwLock::new(Some(snap)),
                         slug: slug.clone(),
+                        race_metrics: RwLock::new(race_metrics),
                     });
                     state.events.write().await.insert(slug.clone(), cache.clone());
                     spawn_refresher(
@@ -395,6 +401,8 @@ fn spawn_refresher(
                         }
                     }
                     metrics.refreshes.fetch_add(1, Ordering::Relaxed);
+                    let rendered = render_event_race_metrics(&cache.slug, &snap.body);
+                    *cache.race_metrics.write().await = rendered;
                     *cache.snapshot.write().await = Some(snap);
                 }
                 Err(e) => {
@@ -567,6 +575,154 @@ fn slug_ok(s: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
+fn esc_label(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str(r"\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+/// Parse a number prefix out of strings like "1200km", "350 / 700 km" → the first float.
+fn parse_km_prefix(s: &str) -> Option<f64> {
+    let mut n = String::new();
+    let mut seen_digit = false;
+    for c in s.chars() {
+        if c.is_ascii_digit() {
+            n.push(c);
+            seen_digit = true;
+        } else if c == '.' && seen_digit {
+            n.push(c);
+        } else if seen_digit {
+            break;
+        }
+    }
+    n.parse().ok()
+}
+
+/// Parse the `/api/event/{slug}` cached body and emit per-rider + per-event
+/// Prometheus value lines (no HELP/TYPE — those are emitted once in `/metrics`).
+fn render_event_race_metrics(slug: &str, body: &[u8]) -> Option<String> {
+    let v: Value = serde_json::from_slice(body).ok()?;
+    let info = v.get("info")?;
+    let participants = v.get("participants")?.as_array()?;
+
+    let slug_esc = esc_label(slug);
+    let mut out = String::with_capacity(participants.len() * 260);
+
+    let total_km = info
+        .get("distance")
+        .and_then(|d| d.as_str())
+        .and_then(parse_km_prefix)
+        .unwrap_or(0.0);
+    let _ = writeln!(
+        out,
+        "madcap_event_total_km{{slug=\"{slug_esc}\"}} {total_km}"
+    );
+    let _ = writeln!(
+        out,
+        "madcap_event_participants{{slug=\"{slug_esc}\"}} {}",
+        participants.len()
+    );
+
+    let mut active: u32 = 0;
+    let mut sleeping_total: u32 = 0;
+    let mut started: u32 = 0;
+    let mut finished: u32 = 0;
+
+    for p in participants {
+        let bib = p.get("bib").and_then(|v| v.as_str()).unwrap_or("");
+        let first = p.get("first_name").and_then(|v| v.as_str()).unwrap_or("");
+        let last = p.get("last_name").and_then(|v| v.as_str()).unwrap_or("");
+        let name_raw = format!("{first} {last}");
+        let name = name_raw.trim();
+        let category = p
+            .get("attributes")
+            .and_then(|a| a.get("category"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let status = p.get("status").and_then(|v| v.as_str()).unwrap_or("");
+        let sleeping = p
+            .get("sleeping")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        let labels = format!(
+            "slug=\"{}\",bib=\"{}\",name=\"{}\",category=\"{}\"",
+            slug_esc,
+            esc_label(bib),
+            esc_label(name),
+            esc_label(category),
+        );
+
+        let has_ping = p.get("last_ping").is_some_and(|v| !v.is_null());
+        if has_ping || status == "REGISTERED" || status == "ACTIVE" {
+            active += 1;
+        }
+        if sleeping {
+            sleeping_total += 1;
+        }
+
+        if let Some(d) = p.get("distance").and_then(|v| v.as_f64()) {
+            let _ = writeln!(out, "madcap_rider_distance_km{{{labels}}} {d}");
+            if d > 0.0 {
+                started += 1;
+            }
+            if total_km > 0.0 && d >= total_km - 0.5 {
+                finished += 1;
+            }
+        }
+        if let Some(sp) = p.get("speed").and_then(|v| v.as_f64()) {
+            let _ = writeln!(out, "madcap_rider_speed_kmh{{{labels}}} {sp}");
+        }
+        if let Some(r) = p.get("overall_rank").and_then(|v| v.as_f64()) {
+            let _ = writeln!(out, "madcap_rider_overall_rank{{{labels}}} {r}");
+        }
+        if let Some(r) = p.get("rank").and_then(|v| v.as_f64()) {
+            let _ = writeln!(out, "madcap_rider_category_rank{{{labels}}} {r}");
+        }
+        if let Some(b) = p.get("battery").and_then(|v| v.as_f64()) {
+            let _ = writeln!(out, "madcap_rider_battery_pct{{{labels}}} {b}");
+        }
+        let _ = writeln!(
+            out,
+            "madcap_rider_sleeping{{{labels}}} {}",
+            if sleeping { 1 } else { 0 }
+        );
+        if let Some(dtc) = p
+            .get("distance_to_next_cp")
+            .and_then(|v| v.get("distance"))
+            .and_then(|v| v.as_f64())
+        {
+            let _ = writeln!(out, "madcap_rider_distance_to_next_cp_km{{{labels}}} {dtc}");
+        }
+    }
+
+    let _ = writeln!(
+        out,
+        "madcap_event_active{{slug=\"{slug_esc}\"}} {active}"
+    );
+    let _ = writeln!(
+        out,
+        "madcap_event_sleeping{{slug=\"{slug_esc}\"}} {sleeping_total}"
+    );
+    let _ = writeln!(
+        out,
+        "madcap_event_started{{slug=\"{slug_esc}\"}} {started}"
+    );
+    let _ = writeln!(
+        out,
+        "madcap_event_finished{{slug=\"{slug_esc}\"}} {finished}"
+    );
+
+    Some(out)
+}
+
 async fn metrics_handler(State(state): State<Arc<AppState>>) -> Response {
     let m = &state.metrics;
     let mut out = String::with_capacity(2048);
@@ -666,6 +822,40 @@ async fn metrics_handler(State(state): State<Arc<AppState>>) -> Response {
             "madcap_fast_events_list_cache_body_bytes {}",
             snap.body.len()
         );
+    }
+
+    // Race metrics — emit HELP/TYPE once, then concatenate per-event lines.
+    let _ = writeln!(out, "# HELP madcap_event_total_km Advertised total course distance in km (parsed from info.distance)");
+    let _ = writeln!(out, "# TYPE madcap_event_total_km gauge");
+    let _ = writeln!(out, "# HELP madcap_event_participants Participant count in the event");
+    let _ = writeln!(out, "# TYPE madcap_event_participants gauge");
+    let _ = writeln!(out, "# HELP madcap_event_active Riders with any ping or REGISTERED/ACTIVE status");
+    let _ = writeln!(out, "# TYPE madcap_event_active gauge");
+    let _ = writeln!(out, "# HELP madcap_event_sleeping Riders currently flagged sleeping");
+    let _ = writeln!(out, "# TYPE madcap_event_sleeping gauge");
+    let _ = writeln!(out, "# HELP madcap_event_started Riders with non-zero distance");
+    let _ = writeln!(out, "# TYPE madcap_event_started gauge");
+    let _ = writeln!(out, "# HELP madcap_event_finished Riders within 0.5 km of the course total");
+    let _ = writeln!(out, "# TYPE madcap_event_finished gauge");
+    let _ = writeln!(out, "# HELP madcap_rider_distance_km Distance covered by the rider in km");
+    let _ = writeln!(out, "# TYPE madcap_rider_distance_km gauge");
+    let _ = writeln!(out, "# HELP madcap_rider_speed_kmh Current reported speed in km/h");
+    let _ = writeln!(out, "# TYPE madcap_rider_speed_kmh gauge");
+    let _ = writeln!(out, "# HELP madcap_rider_overall_rank Overall rank (1 = leader)");
+    let _ = writeln!(out, "# TYPE madcap_rider_overall_rank gauge");
+    let _ = writeln!(out, "# HELP madcap_rider_category_rank Rank within the rider's category");
+    let _ = writeln!(out, "# TYPE madcap_rider_category_rank gauge");
+    let _ = writeln!(out, "# HELP madcap_rider_battery_pct Tracker battery percentage");
+    let _ = writeln!(out, "# TYPE madcap_rider_battery_pct gauge");
+    let _ = writeln!(out, "# HELP madcap_rider_sleeping 1 if the rider is currently flagged sleeping, else 0");
+    let _ = writeln!(out, "# TYPE madcap_rider_sleeping gauge");
+    let _ = writeln!(out, "# HELP madcap_rider_distance_to_next_cp_km Straight-line distance to the next checkpoint");
+    let _ = writeln!(out, "# TYPE madcap_rider_distance_to_next_cp_km gauge");
+
+    for (_slug, cache) in &caches {
+        if let Some(text) = cache.race_metrics.read().await.as_ref() {
+            out.push_str(text);
+        }
     }
 
     let mut h = HeaderMap::new();

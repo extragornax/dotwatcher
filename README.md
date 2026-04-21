@@ -263,18 +263,43 @@ Env overrides: `PROMETHEUS_PORT`, `GRAFANA_PORT`, `GRAFANA_USER`,
 
 Once Grafana is up, build panels from queries like:
 
+**Operational**
 - **Cache age per slug** — `madcap_fast_cache_age_seconds`
 - **Upstream latency trend** — `madcap_fast_upstream_last_ms`
 - **304 rate** — `rate(madcap_fast_responses_not_modified_total[5m])`
 - **Error rate** — `rate(madcap_fast_upstream_errors_total[5m])`
 - **Cache body size** — `madcap_fast_cache_body_bytes / 1024 / 1024` (MB)
 
-For **race-data** analytics (per-rider time series, rank-over-time worms,
-etc.) this Prometheus setup only covers operational health. The natural
-next step is a background exporter that publishes metrics like
-`madcap_rider_distance_km{slug,bib,name}` from each refresh, or writing
-snapshots to a Timescale / ClickHouse database and using Grafana's SQL
-data source.
+**Race data** (per-rider gauges, refreshed every 30 s)
+Each cached event contributes a block labelled
+`{slug,bib,name,category}`:
+
+- `madcap_rider_distance_km`
+- `madcap_rider_speed_kmh`
+- `madcap_rider_overall_rank`  /  `madcap_rider_category_rank`
+- `madcap_rider_battery_pct`
+- `madcap_rider_sleeping` (0 / 1)
+- `madcap_rider_distance_to_next_cp_km`
+
+Plus event-level gauges labelled `{slug}`:
+`madcap_event_total_km`, `madcap_event_participants`,
+`madcap_event_active`, `madcap_event_sleeping`,
+`madcap_event_started`, `madcap_event_finished`.
+
+Example Grafana queries:
+
+- **Rank-over-time worms** — `madcap_rider_overall_rank{slug="desertus-bikus-26"}` with legend `{{name}}`
+- **Cactus delta per rider** (use your own start/end dates) —
+  `madcap_rider_distance_km - on(slug) group_left() madcap_event_total_km * ((time() - $start_ts) / ($end_ts - $start_ts))`
+- **Field speed histogram** —
+  `histogram_quantile(0.5, sum by (le) (rate(madcap_rider_speed_kmh_bucket[5m])))`
+  (not a histogram out of the box — use `quantile_over_time(0.5, madcap_rider_speed_kmh[15m])` for a quick median)
+- **Finishers counter** — `madcap_event_finished{slug="desertus-bikus-26"}`
+- **Low batteries** — `madcap_rider_battery_pct < 20`
+
+Cardinality on desertus-bikus-26: ~376 riders × 7 metrics ≈ 2 500 active
+series per event. Multi-event Prometheus handles tens of thousands
+comfortably.
 
 ### Auto-deploy from GitHub
 

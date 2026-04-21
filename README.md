@@ -6,9 +6,9 @@ A fast, self-hosted viewer for public [madcap.cc](https://app.madcap.cc) event p
 
 Not affiliated with madcap.cc. Reads only their public read-only API.
 
-See [`CHANGELOG.md`](CHANGELOG.md) for per-iteration history. This README
-describes the app as it stands today, including everything currently under
-`## [Unreleased]`.
+See [`CHANGELOG.md`](CHANGELOG.md) for per-iteration history, one dated
+section per commit. This README describes the app as it stands on the
+current tip of `master`.
 
 ---
 

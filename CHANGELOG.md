@@ -6,32 +6,77 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Entries 
 
 ## [Unreleased]
 
-### Added
+## [2026-04-21] 275049a — Map overlay declutter
+
 ### Changed
 - **Map overlay decluttered** — the overlay used to carry 5 toggle buttons + 2 selects + search + count on one row, which got crowded as features piled up. Now it holds only the high-frequency controls (search, ★ only, ⚙ settings, count); clicking ⚙ opens a popover below with the rest (tile style, marker labels, traces / elev / journals toggles) grouped into a Style section and an Overlays section. Outside click closes it.
 
+## [2026-04-21] 710885b — ETA-to-next-CP and ETA-finish predictions
+
 ### Added
 - **Finish-time prediction + ETA to next CP** in the detail view — two new stat cells. `ETA next CP` uses the rider's current speed (or a rolling 1-hour average if they're barely moving) against `distance_to_next_cp.distance`. `ETA finish` projects the whole-course completion time from the remaining km divided by the rolling average, falling back to an event-wide average pace if the rolling window is empty. Returns `—` for stopped / finished riders.
+
+## [2026-04-21] 1864ac0 — Top peak speeds leaderboard
+
+### Added
 - **Top peak speeds leaderboard** — new "Peak speeds — top 10" table in the overview (shown when no rider is selected) listing riders by the single highest `point[4]` value across their whole track. Columns: rank, name (clickable to open detail), ★ + staff badges, max km/h, localized timestamp of when they hit it. Cached by `state.tracks` identity.
+
+## [2026-04-21] 0a00d75 — Journal pins layer on the map
+
+### Added
 - **Journal pins on the map** — new `journals` toggle in the map overlay (default off, persisted). Renders each `SLEEP` / `PICTURE` entry as a small circular marker (📸 / 🛌) at the entry's lat/lng. Clicking opens a popup with the rider name, type, timestamp, thumbnail (for photos) and an "open details →" shortcut. Honors the ★-only filter — journal pins follow the same favourites-only mode as the rider markers.
+
+## [2026-04-21] 63cdcc6 — Organizer / staff badge
+
+### Added
 - **Organizer / staff badge** — participants with `attributes.orga === "1"` get a small orange `staff` chip next to their name in the leaderboard row, detail header, map popup, and feed entries. Makes race organizers easy to tell apart from actual competitors.
-- **Segment timings** in the participant detail view — table of CP-to-CP splits showing each segment's duration, the rider's rank for that segment (across everyone who completed it) and the gap to the fastest rider on that leg.
-- **100 km segments** — second split table below the CP segments, bucketing the track by every 100 km of actual distance covered (haversine along the points) with the same rank + gap columns. Markers per rider are cached by `state.tracks` identity so repeated detail views don't recompute.
-- **Marker clustering** on the map via `leaflet.markercluster` — rider markers now cluster below zoom 11, keeping the zoomed-out view legible with 300+ riders. Cluster bubbles are themed to match the dark UI (green / amber / red based on cluster size).
-- **Course elevation banner** at the top of the map (toggle `elev` in the overlay, default on). Profile derived from the leading rider's track (the one who's covered the most ground); a gold vertical cursor shows where the 🌵 cactus pacer is, so it also reflects the scrubber. Persisted in `localStorage:madcap_map_elev`.
-- **Battery sparkline** in the rider detail view — third profile strip (blue) under elevation and speed, reading `point[5]` from the track. Header shows the current and minimum battery percentage. Hidden if the tracker never reports battery.
-- **Shared cursor on the 3 profile graphs** — a range slider below the elevation / speed / battery sparklines moves a gold vertical line across all three in lockstep, and hovering any of the graphs drives the same cursor. A readout below the slider prints the timestamp (localized) + elevation / speed / battery at the nearest point.
-- **GitHub Actions auto-deploy** — `.github/workflows/deploy.yml` SSHes into a host on every push to `master` (or manual `workflow_dispatch`), runs `git pull --ff-only` + `docker compose up -d --build`, then polls the container's healthcheck until it's `healthy`. Parameterized via repo secrets (`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, optional `DEPLOY_PORT`) and an optional `DEPLOY_PATH` variable (default `/srv/madcap_fast`). README gained a short "Auto-deploy from GitHub" section.
+
+## [2026-04-21] 7a7cde5 — Disk cache persistence
 
 ### Added
 - **Disk cache persistence across restarts** — new `MADCAP_CACHE_DIR` env var. When set, each refresh atomically writes the raw combined JSON to `<dir>/events/<slug>.json` (and the events list to `<dir>/events_list.json`) via tmp-file + rename. On startup the server walks the directory and rebuilds brotli / gzip / ETag via `snapshot_from_bytes`, so the first request after a restart is already warm instead of paying the ~2 s cold-fetch. `docker-compose.yml` enables this by default against a named `cache` volume at `/var/cache/madcap_fast`. Unset env var = in-memory only (previous behavior).
 
-### Changed
-- **Default bind port is now `9004`** (was `8080`) — matches what `docker-compose.yml` was already exposing on the host. Updated in `src/main.rs`, `Dockerfile`, `docker-compose.yml`, and README.
+## [2026-04-21] 83dd56c — Shared cursor on the 3 profile graphs
+
+### Added
+- **Shared cursor on the 3 profile graphs** — a range slider below the elevation / speed / battery sparklines moves a gold vertical line across all three in lockstep, and hovering any of the graphs drives the same cursor. A readout below the slider prints the timestamp (localized) + elevation / speed / battery at the nearest point.
+
+## [2026-04-21] 298f883 — Battery sparkline
+
+### Added
+- **Battery sparkline** in the rider detail view — third profile strip (blue) under elevation and speed, reading `point[5]` from the track. Header shows the current and minimum battery percentage. Hidden if the tracker never reports battery.
+
+## [2026-04-21] 90649f5 — GitHub Actions auto-deploy + next-CP NaN fix
+
+### Added
+- **GitHub Actions auto-deploy** — `.github/workflows/deploy.yml` SSHes into a host on every push to `master` (or manual `workflow_dispatch`), runs `git pull --ff-only` + `docker compose up -d --build`, then polls the container's healthcheck until it's `healthy`. Parameterized via repo secrets (`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, optional `DEPLOY_PORT`) and an optional `DEPLOY_PATH` variable (default `/srv/madcap_fast`). README gained a short "Auto-deploy from GitHub" section.
 
 ### Fixed
 - **"To next CP" no longer shows `NaN km`** — upstream sends `distance_to_next_cp` as `{ cp_id, distance }`, not a scalar. `fmtKm` now unwraps objects and returns `—` on missing / NaN values.
+
+## [2026-04-20] 8823ce3 — Map hotfix
+
+### Fixed
 - **Map no longer crashes with "Map has no maxZoom specified"** — `leaflet.markercluster` refuses to attach to a map with no `maxZoom`; added `maxZoom: 19` to `L.map()` options. Also falls back to a plain `L.layerGroup` if the cluster script failed to load, calls `refreshClusters()` after marker-position updates (cluster index would otherwise desync on `setLatLng`), and sets `pointer-events: none` on the elevation banner so it doesn't intercept zoom-control clicks.
+
+## [2026-04-20] e34e1ba — Marker clustering, course elevation banner, port 9004
+
+### Added
+- **Marker clustering** on the map via `leaflet.markercluster` — rider markers now cluster below zoom 11, keeping the zoomed-out view legible with 300+ riders. Cluster bubbles are themed to match the dark UI (green / amber / red based on cluster size).
+- **Course elevation banner** at the top of the map (toggle `elev` in the overlay, default on). Profile derived from the leading rider's track (the one who's covered the most ground); a gold vertical cursor shows where the 🌵 cactus pacer is, so it also reflects the scrubber. Persisted in `localStorage:madcap_map_elev`.
+
+### Changed
+- **Default bind port is now `9004`** (was `8080`) — matches what `docker-compose.yml` was already exposing on the host. Updated in `src/main.rs`, `Dockerfile`, `docker-compose.yml`, and README.
+
+## [2026-04-20] 0b37537 — 100 km segments
+
+### Added
+- **100 km segments** — second split table below the CP segments, bucketing the track by every 100 km of actual distance covered (haversine along the points) with the same rank + gap columns. Markers per rider are cached by `state.tracks` identity so repeated detail views don't recompute.
+
+## [2026-04-20] 7950691 — Segment timings + README rewrite
+
+### Added
+- **Segment timings** in the participant detail view — table of CP-to-CP splits showing each segment's duration, the rider's rank for that segment (across everyone who completed it) and the gap to the fastest rider on that leg.
 
 ### Changed
 - **README rewritten** to match the current feature set: documents every tab (List / Map / Feed), controls (`ℹ`, `🔔`), playback scrubber, profiles, rest timeline, segments, cactus pacer, notification triggers, URL state, UTC-aware time display, and the server's paginated-tracks pipeline.

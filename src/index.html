@@ -200,6 +200,8 @@
   .profile .area { fill: var(--accent); opacity: 0.15; }
   .profile.speed .line { stroke: #3fb950; }
   .profile.speed .area { fill: #3fb950; opacity: 0.15; }
+  .profile.battery .line { stroke: #58a6ff; }
+  .profile.battery .area { fill: #58a6ff; opacity: 0.15; }
   .profile.timeline svg { height: 32px; }
   .profile.timeline .move { fill: #3fb950; opacity: 0.22; }
   .profile.timeline .rest { fill: #d29922; opacity: 0.85; }
@@ -1765,13 +1767,18 @@
     const pts = track.track;
     const elev = pts.map(pt => [pt[0], pt[3]]);
     const speed = pts.map(pt => [pt[0], pt[4]]);
+    const battery = pts.map(pt => [pt[0], pt[5]]);
     const elevVals = elev.map(x => x[1]).filter(v => v != null && !isNaN(v));
     const spdVals = speed.map(x => x[1]).filter(v => v != null && !isNaN(v));
+    const batVals = battery.map(x => x[1]).filter(v => v != null && !isNaN(v));
     const W = 600, H = 80;
     const eMin = elevVals.length ? Math.min(...elevVals) : null;
     const eMax = elevVals.length ? Math.max(...elevVals) : null;
     const sMax = spdVals.length ? Math.max(...spdVals) : null;
     const sAvg = spdVals.length ? spdVals.reduce((a, b) => a + b, 0) / spdVals.length : null;
+    const bMin = batVals.length ? Math.min(...batVals) : null;
+    const bCur = batVals.length ? batVals[batVals.length - 1] : null;
+    const batSvg = batVals.length ? `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${sparklineSvg(battery, W, H)}</svg>` : '';
     return `
       <div class="profile">
         <h4>Elevation <span class="range">${eMin != null ? eMin.toFixed(0) + '–' + eMax.toFixed(0) + ' m' : '—'}</span></h4>
@@ -1781,6 +1788,10 @@
         <h4>Speed <span class="range">${sMax != null ? 'max ' + sMax.toFixed(1) + ' · avg ' + sAvg.toFixed(1) + ' km/h' : '—'}</span></h4>
         <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${sparklineSvg(speed, W, H)}</svg>
       </div>
+      ${batSvg ? `<div class="profile battery">
+        <h4>Battery <span class="range">${bCur != null ? 'now ' + bCur + '%' : ''}${bMin != null ? ' · min ' + bMin + '%' : ''}</span></h4>
+        ${batSvg}
+      </div>` : ''}
     `;
   }
 

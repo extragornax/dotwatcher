@@ -7,6 +7,10 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Entries 
 ## [Unreleased]
 
 ### Added
+- **Race metrics stop at the finish line** — `render_event_race_metrics` now parses `info.end_date` (hand-rolled UTC ISO parser, zero new deps) and returns `None` once the race is over. On the next 30 s refresh, the event's `race_metrics` slot goes empty and those Prometheus series disappear. Operational gauges (`cache_age`, `upstream_last_ms`, `cache_body_bytes`) keep reporting.
+- **`MADCAP_WARM_SLUG` accepts a comma-separated list** — e.g. `desertus-bikus-26,via-race-25,aux-origines-26` warms each slug in a background task on boot. A Grafana dashboard can then use `label_values(madcap_event_total_km, slug)` to populate a per-event dropdown covering every live race.
+
+### Added
 - **Per-rider race metrics on `/metrics`** — each cached event now contributes a block of gauges labelled `{slug, bib, name, category}`: `madcap_rider_distance_km`, `madcap_rider_speed_kmh`, `madcap_rider_overall_rank`, `madcap_rider_category_rank`, `madcap_rider_battery_pct`, `madcap_rider_sleeping`, `madcap_rider_distance_to_next_cp_km`. Plus event-level gauges `{slug}`: `madcap_event_total_km`, `madcap_event_participants`, `madcap_event_active`, `madcap_event_sleeping`, `madcap_event_started`, `madcap_event_finished`. Rendered once per 30 s refresh (not per scrape), stored on `EventCache.race_metrics`, stitched into `/metrics` under a single set of HELP/TYPE headers. For desertus-bikus-26 that's ~2 500 series per event — trivial for Prometheus. README gains a "Race data" section with example Grafana queries (rank-over-time worms, cactus delta, speed quantiles, finisher count, low-battery alerting).
 
 ### Changed

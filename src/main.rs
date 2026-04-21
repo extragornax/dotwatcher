@@ -5,7 +5,7 @@ use std::{
     path::{Path as FsPath, PathBuf},
     sync::Arc,
     sync::atomic::{AtomicU64, Ordering},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::{Context, Result};
@@ -575,6 +575,44 @@ fn slug_ok(s: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
+/// Upstream sends naive ISO strings ("YYYY-MM-DDTHH:MM:SS"); treat as UTC.
+/// Returns unix seconds, or None on parse failure.
+fn parse_iso_utc(s: &str) -> Option<i64> {
+    let s = s.split('.').next()?;
+    let s = s.trim_end_matches('Z');
+    let (date, time) = s.split_once('T')?;
+    let mut d = date.split('-');
+    let y: i32 = d.next()?.parse().ok()?;
+    let mo: u32 = d.next()?.parse().ok()?;
+    let day: u32 = d.next()?.parse().ok()?;
+    let mut t = time.split(':');
+    let hh: u32 = t.next()?.parse().ok()?;
+    let mm: u32 = t.next()?.parse().ok()?;
+    let ss: u32 = t.next()?.parse().ok()?;
+    let days = days_since_epoch(y, mo, day)?;
+    Some(days * 86400 + hh as i64 * 3600 + mm as i64 * 60 + ss as i64)
+}
+
+// Howard Hinnant's days_from_civil; unix epoch is 1970-01-01 = 0.
+fn days_since_epoch(y: i32, m: u32, d: u32) -> Option<i64> {
+    if !(1..=12).contains(&m) || !(1..=31).contains(&d) {
+        return None;
+    }
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = (y - era * 400) as u32;
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    Some(era as i64 * 146097 + doe as i64 - 719468)
+}
+
+fn now_unix_s() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
 fn esc_label(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
@@ -611,6 +649,17 @@ fn render_event_race_metrics(slug: &str, body: &[u8]) -> Option<String> {
     let v: Value = serde_json::from_slice(body).ok()?;
     let info = v.get("info")?;
     let participants = v.get("participants")?.as_array()?;
+
+    // Don't churn Prometheus series for races that are already over.
+    if let Some(end_ts) = info
+        .get("end_date")
+        .and_then(|v| v.as_str())
+        .and_then(parse_iso_utc)
+    {
+        if now_unix_s() > end_ts {
+            return None;
+        }
+    }
 
     let slug_esc = esc_label(slug);
     let mut out = String::with_capacity(participants.len() * 260);
@@ -1090,12 +1139,19 @@ async fn main() -> Result<()> {
         metrics.clone(),
     );
 
-    let warm_slug =
-        std::env::var("MADCAP_WARM_SLUG").unwrap_or_else(|_| "desertus-bikus-26".into());
-    if !warm_slug.is_empty() {
+    // Comma-separated list of slugs to pre-warm on boot. Each becomes its own
+    // background refresher; duplicates in the cache dir are a no-op.
+    let warm_slugs = std::env::var("MADCAP_WARM_SLUG")
+        .unwrap_or_else(|_| "desertus-bikus-26".into());
+    for raw in warm_slugs.split(',') {
+        let slug = raw.trim();
+        if slug.is_empty() || !slug_ok(slug) {
+            continue;
+        }
+        let slug = slug.to_string();
         let s = state.clone();
         tokio::spawn(async move {
-            let _ = ensure_cache(&s, &warm_slug).await;
+            let _ = ensure_cache(&s, &slug).await;
         });
     }
 

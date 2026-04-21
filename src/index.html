@@ -228,6 +228,10 @@
   .feed-entry .type-badge.picture { color: var(--accent); border-color: #5a3a2a; background: #2a1f16; }
   .feed-entry .time { color: var(--mute); font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; min-width: 90px; }
   .badge-orga { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; background: #2a1f16; border: 1px solid #5a3a2a; color: var(--accent); margin-left: 4px; vertical-align: middle; }
+  .jmark { font-size: 14px; line-height: 24px; text-align: center; width: 24px; height: 24px; border-radius: 50%; background: rgba(20,24,29,0.88); border: 1.5px solid var(--border); box-shadow: 0 1px 2px rgba(0,0,0,0.6); }
+  .jmark.picture { border-color: var(--accent); }
+  .jmark.sleep { border-color: var(--mute); opacity: 0.85; }
+  .jpopup img { max-width: 220px; max-height: 160px; border-radius: 4px; margin-top: 6px; display: block; }
   @media (max-width: 880px) {
     #view-list.active { grid-template-columns: 1fr; }
     #sidebar { max-height: 55vh; border-right: none; border-bottom: 1px solid var(--border); }
@@ -321,6 +325,7 @@
     </select>
     <button id="map-traces" class="map-btn on" type="button" title="toggle traces" aria-pressed="true">traces</button>
     <button id="map-elev" class="map-btn on" type="button" title="toggle course elevation banner" aria-pressed="true">elev</button>
+    <button id="map-journals" class="map-btn" type="button" title="toggle journal pins (sleep / pictures)" aria-pressed="false">journals</button>
     <button id="map-favonly" class="map-btn fav" type="button" title="favorites only" aria-pressed="false">★ only</button>
     <span id="mapcount" style="color: var(--mute)">—</span>
   </div>
@@ -404,6 +409,9 @@
 
   const ELEV_KEY = 'madcap_map_elev';
   let showElev = localStorage.getItem(ELEV_KEY) !== '0';
+
+  const JOURNALS_KEY = 'madcap_map_journals';
+  let showJournalPins = localStorage.getItem(JOURNALS_KEY) === '1';
   let courseProfileCache = { tracks: null, profile: null, totalKm: 0 };
 
   const LABELS_KEY = 'madcap_map_labels';
@@ -455,7 +463,7 @@
       if (b) { b.classList.toggle('on', favOnly); b.setAttribute('aria-pressed', favOnly); }
     });
     renderList();
-    if (map) renderMap();
+    if (map) { renderMap(); renderJournalPins(); }
     writeUrlState();
   }
 
@@ -869,6 +877,7 @@
       routes: L.layerGroup().addTo(map),
       cps: L.layerGroup().addTo(map),
       traces: L.layerGroup().addTo(map),
+      journals: L.layerGroup().addTo(map),
       participants: (typeof L.markerClusterGroup === 'function'
         ? L.markerClusterGroup({
             disableClusteringAtZoom: 11,
@@ -977,6 +986,7 @@
     }
 
     renderTraces();
+    renderJournalPins();
     renderCactus();
     renderCourseElev();
     if (!cactusTimer) cactusTimer = setInterval(renderCactus, 60000);
@@ -1179,6 +1189,46 @@
       });
       cactusMarker.addTo(map);
     }
+  }
+
+  function renderJournalPins() {
+    if (!mapLayers) return;
+    mapLayers.journals.clearLayers();
+    if (!showJournalPins) return;
+    const entries = (state.journals && state.journals.entries) || [];
+    const partsById = new Map(state.participants.map(p => [p.id, p]));
+    for (const e of entries) {
+      if (e.latitude == null || e.longitude == null) continue;
+      if (favOnly && !favs.has(e.participant_id)) continue;
+      const p = partsById.get(e.participant_id);
+      const name = p ? `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'rider' : 'unknown';
+      const typeLow = (e.type || '').toLowerCase();
+      const icon = typeLow === 'picture' ? '📸' : (typeLow === 'sleep' ? '🛌' : '•');
+      const cls = 'jmark' + (typeLow === 'picture' ? ' picture' : typeLow === 'sleep' ? ' sleep' : '');
+      const divIcon = L.divIcon({ className: '', html: `<div class="${cls}">${icon}</div>`, iconSize: [24, 24], iconAnchor: [12, 12] });
+      const m = L.marker([e.latitude, e.longitude], { icon: divIcon, keyboard: false });
+      const url = (e.data && e.data.url) || '';
+      const pic = typeLow === 'picture' && url
+        ? `<a href="${escapeAttr(url)}" target="_blank" rel="noopener"><img src="${escapeAttr(url)}" loading="lazy" alt=""/></a>`
+        : '';
+      m.bindPopup(`
+        <div class="jpopup">
+          <b>${escape(name)}</b> · <span style="color:var(--mute)">${escape(e.type || '')}</span>
+          <div style="color:var(--mute);font-size:12px;margin-top:2px">${escape(fmtTime(e.timestamp))} · ${escape(sinceText(e.timestamp))}</div>
+          ${pic}
+          <div class="popup-actions"><button data-action="detail" data-id="${escape(e.participant_id)}">open details →</button></div>
+        </div>
+      `);
+      m.addTo(mapLayers.journals);
+    }
+  }
+
+  function setShowJournalPins(v) {
+    showJournalPins = !!v;
+    localStorage.setItem(JOURNALS_KEY, showJournalPins ? '1' : '0');
+    const b = document.getElementById('map-journals');
+    if (b) { b.classList.toggle('on', showJournalPins); b.setAttribute('aria-pressed', showJournalPins); }
+    if (map) renderJournalPins();
   }
 
   function renderTraces() {
@@ -1984,6 +2034,7 @@
   document.getElementById('map-favonly').addEventListener('click', () => setFavOnly(!favOnly));
   document.getElementById('map-traces').addEventListener('click', () => setShowTraces(!showTraces));
   document.getElementById('map-elev').addEventListener('click', () => setShowElev(!showElev));
+  document.getElementById('map-journals').addEventListener('click', () => setShowJournalPins(!showJournalPins));
 
   // -------- home view ----------
   function parseISO(s) { return parseUtc(s); }
@@ -2119,6 +2170,8 @@
     if (tracesBtn) { tracesBtn.classList.toggle('on', showTraces); tracesBtn.setAttribute('aria-pressed', showTraces); }
     const elevBtn = document.getElementById('map-elev');
     if (elevBtn) { elevBtn.classList.toggle('on', showElev); elevBtn.setAttribute('aria-pressed', showElev); }
+    const jBtn = document.getElementById('map-journals');
+    if (jBtn) { jBtn.classList.toggle('on', showJournalPins); jBtn.setAttribute('aria-pressed', showJournalPins); }
     load().then(() => {
       if (urlState.pid) {
         const p = state.participants.find(x => x.id === urlState.pid);

@@ -202,6 +202,14 @@
   .profile.speed .area { fill: #3fb950; opacity: 0.15; }
   .profile.battery .line { stroke: #58a6ff; }
   .profile.battery .area { fill: #58a6ff; opacity: 0.15; }
+  .profile-group .profile { margin-top: 8px; }
+  .profile-group .profile:first-child { margin-top: 14px; }
+  .profile-group .profile svg { cursor: crosshair; }
+  .profile-cursor { stroke: #f1c40f; stroke-width: 1; opacity: 0.9; pointer-events: none; }
+  .profile-controls { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .profile-controls input[type=range] { width: 100%; accent-color: #f1c40f; }
+  .profile-readout { color: var(--mute); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .profile-readout b { color: var(--fg); font-weight: 600; }
   .profile.timeline svg { height: 32px; }
   .profile.timeline .move { fill: #3fb950; opacity: 0.22; }
   .profile.timeline .rest { fill: #d29922; opacity: 0.85; }
@@ -1780,19 +1788,97 @@
     const bCur = batVals.length ? batVals[batVals.length - 1] : null;
     const batSvg = batVals.length ? `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${sparklineSvg(battery, W, H)}</svg>` : '';
     return `
-      <div class="profile">
-        <h4>Elevation <span class="range">${eMin != null ? eMin.toFixed(0) + '–' + eMax.toFixed(0) + ' m' : '—'}</span></h4>
-        <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${sparklineSvg(elev, W, H)}</svg>
+      <div class="profile-group" data-profile-pid="${escape(p.id)}">
+        <div class="profile">
+          <h4>Elevation <span class="range">${eMin != null ? eMin.toFixed(0) + '–' + eMax.toFixed(0) + ' m' : '—'}</span></h4>
+          <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${sparklineSvg(elev, W, H)}</svg>
+        </div>
+        <div class="profile speed">
+          <h4>Speed <span class="range">${sMax != null ? 'max ' + sMax.toFixed(1) + ' · avg ' + sAvg.toFixed(1) + ' km/h' : '—'}</span></h4>
+          <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${sparklineSvg(speed, W, H)}</svg>
+        </div>
+        ${batSvg ? `<div class="profile battery">
+          <h4>Battery <span class="range">${bCur != null ? 'now ' + bCur + '%' : ''}${bMin != null ? ' · min ' + bMin + '%' : ''}</span></h4>
+          ${batSvg}
+        </div>` : ''}
+        <div class="profile-controls">
+          <input id="profile-cursor" type="range" min="0" max="1000" step="1" value="1000" />
+          <div id="profile-readout" class="profile-readout">—</div>
+        </div>
       </div>
-      <div class="profile speed">
-        <h4>Speed <span class="range">${sMax != null ? 'max ' + sMax.toFixed(1) + ' · avg ' + sAvg.toFixed(1) + ' km/h' : '—'}</span></h4>
-        <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${sparklineSvg(speed, W, H)}</svg>
-      </div>
-      ${batSvg ? `<div class="profile battery">
-        <h4>Battery <span class="range">${bCur != null ? 'now ' + bCur + '%' : ''}${bMin != null ? ' · min ' + bMin + '%' : ''}</span></h4>
-        ${batSvg}
-      </div>` : ''}
     `;
+  }
+
+  function initProfileCursor(p) {
+    const group = document.querySelector('.profile-group');
+    if (!group) return;
+    const track = ((state.tracks && state.tracks.tracks) || []).find(t => t.participant_id === p.id);
+    if (!track || !track.track || track.track.length < 2) return;
+    const pts = track.track;
+    const t0 = pts[0][0], tN = pts[pts.length - 1][0];
+    const slider = group.querySelector('#profile-cursor');
+    const readout = group.querySelector('#profile-readout');
+    const svgs = Array.from(group.querySelectorAll('.profile svg'));
+    const W = 600;
+    const startMs = eventStartMs();
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+
+    const cursors = svgs.map(svg => {
+      const vb = (svg.getAttribute('viewBox') || '').split(/\s+/);
+      const h = parseFloat(vb[3] || '80');
+      const line = document.createElementNS(SVG_NS, 'line');
+      line.setAttribute('class', 'profile-cursor');
+      line.setAttribute('y1', '0');
+      line.setAttribute('y2', String(h));
+      svg.appendChild(line);
+      return line;
+    });
+
+    function nearestIdx(t) {
+      if (t <= pts[0][0]) return 0;
+      if (t >= pts[pts.length - 1][0]) return pts.length - 1;
+      let lo = 0, hi = pts.length - 1;
+      while (lo < hi - 1) {
+        const mid = (lo + hi) >> 1;
+        if (pts[mid][0] <= t) lo = mid; else hi = mid;
+      }
+      return (Math.abs(pts[lo][0] - t) < Math.abs(pts[hi][0] - t)) ? lo : hi;
+    }
+
+    function update(f) {
+      const t = t0 + f * (tN - t0);
+      const idx = nearestIdx(t);
+      const pt = pts[idx];
+      const x = f * W;
+      for (const c of cursors) {
+        c.setAttribute('x1', x);
+        c.setAttribute('x2', x);
+      }
+      const whenMs = startMs != null ? startMs + pt[0] * 1000 : null;
+      const when = whenMs != null
+        ? new Date(whenMs).toLocaleString(undefined, { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+        : '—';
+      const elev = pt[3] != null && !isNaN(pt[3]) ? pt[3].toFixed(0) + ' m' : '—';
+      const spd = pt[4] != null && !isNaN(pt[4]) ? pt[4].toFixed(1) + ' km/h' : '—';
+      const bat = pt[5] != null && !isNaN(pt[5]) ? ' · ' + pt[5] + '%' : '';
+      readout.innerHTML = `<b>${escape(when)}</b> · ${elev} · ${spd}${bat}`;
+    }
+
+    slider.addEventListener('input', (ev) => {
+      const f = parseFloat(ev.target.value) / 1000;
+      update(f);
+    });
+    svgs.forEach(svg => {
+      svg.addEventListener('mousemove', (ev) => {
+        const rect = svg.getBoundingClientRect();
+        if (rect.width <= 0) return;
+        const f = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
+        slider.value = Math.round(f * 1000);
+        update(f);
+      });
+    });
+
+    update(1);
   }
 
   function renderDetail(p) {
@@ -1840,6 +1926,7 @@
         <p style="color:var(--mute)">Track has ${tracks.track.length} points.</p>
       ` : `<p style="color:var(--mute)">No track points yet.</p>`}
     `;
+    initProfileCursor(p);
   }
 
   function escape(s) {

@@ -227,6 +227,7 @@
   .feed-entry .type-badge { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 2px 8px; border-radius: 4px; background: var(--panel-2); color: var(--mute); border: 1px solid var(--border); margin-left: 8px; vertical-align: middle; }
   .feed-entry .type-badge.picture { color: var(--accent); border-color: #5a3a2a; background: #2a1f16; }
   .feed-entry .time { color: var(--mute); font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; min-width: 90px; }
+  .badge-orga { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; background: #2a1f16; border: 1px solid #5a3a2a; color: var(--accent); margin-left: 4px; vertical-align: middle; }
   @media (max-width: 880px) {
     #view-list.active { grid-template-columns: 1fr; }
     #sidebar { max-height: 55vh; border-right: none; border-bottom: 1px solid var(--border); }
@@ -670,6 +671,8 @@
     return (+n).toFixed(1) + ' km';
   };
   const fmtKmh = (v) => (v == null ? '—' : (+v).toFixed(1) + ' km/h');
+  const isOrga = (p) => !!(p && p.attributes && p.attributes.orga === '1');
+  const orgaBadge = (p) => isOrga(p) ? ' <span class="badge-orga" title="event organizer / staff">staff</span>' : '';
   const fmtTime = (iso) => {
     if (!iso) return '—';
     const d = parseUtc(iso);
@@ -1218,7 +1221,7 @@
     const when = pt ? sinceText(p.last_ping || new Date(Date.now() - 0).toISOString()) : '—';
     const isFav = favs.has(p.id);
     return `
-      <div><b>#${p.overall_rank ?? '-'}</b> ${escape(p.first_name || '')} ${escape(p.last_name || '')} <button class="star ${isFav ? 'on' : ''}" data-action="fav" data-id="${escape(p.id)}" title="favorite" aria-pressed="${isFav}">★</button></div>
+      <div><b>#${p.overall_rank ?? '-'}</b> ${escape(p.first_name || '')} ${escape(p.last_name || '')}${orgaBadge(p)} <button class="star ${isFav ? 'on' : ''}" data-action="fav" data-id="${escape(p.id)}" title="favorite" aria-pressed="${isFav}">★</button></div>
       <div style="color:var(--mute);font-size:12px;margin-top:2px">bib ${escape(p.bib || '-')} · ${escape((p.attributes && p.attributes.category) || '')}</div>
       <div style="margin-top:6px"><b>${fmtKm(p.distance)}</b> @ ${fmtKmh(p.speed)}</div>
       <div style="color:var(--mute);font-size:12px">to next CP: ${fmtKm(p.distance_to_next_cp)}</div>
@@ -1344,7 +1347,7 @@
       div.innerHTML = `
         ${thumb}
         <div>
-          <a class="who-link" data-action="detail" data-id="${escape(e.participant_id)}">${escape(name)}</a>${fav}
+          <a class="who-link" data-action="detail" data-id="${escape(e.participant_id)}">${escape(name)}</a>${fav}${orgaBadge(p)}
           <span class="type-badge ${e.type.toLowerCase()}">${escape(e.type)}</span>
           <div class="meta">${escape(bib)}${rank} · ${sinceText(e.timestamp)} · <a href="https://www.google.com/maps?q=${e.latitude},${e.longitude}" target="_blank" rel="noopener">${e.latitude.toFixed(4)}, ${e.longitude.toFixed(4)}</a></div>
         </div>
@@ -1486,7 +1489,7 @@
       div.innerHTML = `
         <div class="rank">#${rankNum ?? '-'}</div>
         <div class="who">
-          <div class="name"><span class="dot ${dotClass}"></span>${escape(p.first_name || '')} ${escape(p.last_name || '')}${escape(nick)}</div>
+          <div class="name"><span class="dot ${dotClass}"></span>${escape(p.first_name || '')} ${escape(p.last_name || '')}${escape(nick)}${orgaBadge(p)}</div>
           <div class="meta">bib ${escape(p.bib || '-')} · ${escape((p.attributes && p.attributes.category) || '')} · ${sinceText(p.last_ping)}</div>
         </div>
         <div class="num"><b>${fmtKm(p.distance)}</b><br/>${fmtKmh(p.speed)}${deltaHtml}</div>
@@ -1889,7 +1892,7 @@
     const lastPoint = tracks && tracks.track && tracks.track.length ? tracks.track[tracks.track.length - 1] : null;
     const isFav = favs.has(p.id);
     body.innerHTML = `
-      <h2>#${p.overall_rank ?? '-'} · ${escape(p.first_name || '')} ${escape(p.last_name || '')} ${p.nickname ? '“' + escape(p.nickname) + '”' : ''} <button class="star ${isFav ? 'on' : ''}" data-action="fav" data-id="${escape(p.id)}" title="favorite" aria-pressed="${isFav}">★</button></h2>
+      <h2>#${p.overall_rank ?? '-'} · ${escape(p.first_name || '')} ${escape(p.last_name || '')} ${p.nickname ? '“' + escape(p.nickname) + '”' : ''}${orgaBadge(p)} <button class="star ${isFav ? 'on' : ''}" data-action="fav" data-id="${escape(p.id)}" title="favorite" aria-pressed="${isFav}">★</button></h2>
       <p class="tagline">bib <b>${escape(p.bib || '-')}</b> · tracker ${escape(String(p.tracker || '-'))} · ${escape((p.attributes && p.attributes.category) || '')} · ${escape(p.country || '')}</p>
       <div class="grid">
         <div class="stat"><div class="label">Distance</div><div class="value">${fmtKm(p.distance)}</div></div>

@@ -1588,7 +1588,34 @@
             <td class="n">${c.longitude.toFixed(5)}</td>
           </tr>`).join('')}</tbody>
       </table>
+      ${renderTopSpeedsBlock()}
       <p style="color:var(--mute);margin-top:18px">Select a participant to see their splits and latest position.</p>
+    `;
+  }
+
+  function renderTopSpeedsBlock() {
+    const list = computeTopSpeeds();
+    if (!list.length) return '';
+    const top = list.slice(0, 10);
+    const startMs = eventStartMs();
+    const rows = top.map((x, i) => {
+      const name = x.p ? `${x.p.first_name || ''} ${x.p.last_name || ''}`.trim() : 'unknown';
+      const when = startMs != null && x.at ? new Date(startMs + x.at[0] * 1000)
+        .toLocaleString(undefined, { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+      const favStar = favs.has(x.pid) ? ' <span style="color:#f1c40f">★</span>' : '';
+      return `<tr>
+        <td>${i + 1}</td>
+        <td><a class="who-link" data-action="detail" data-id="${escape(x.pid)}">${escape(name)}</a>${favStar}${orgaBadge(x.p)}</td>
+        <td class="n"><b>${x.max.toFixed(1)} km/h</b></td>
+        <td>${escape(when)}</td>
+      </tr>`;
+    }).join('');
+    return `
+      <h3 style="margin:18px 0 6px">Peak speeds — top 10</h3>
+      <table>
+        <thead><tr><th>#</th><th>Rider</th><th class="n">Max speed</th><th>When</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
     `;
   }
 
@@ -1679,6 +1706,26 @@
         </svg>
       </div>
     `;
+  }
+
+  let topSpeedsCache = { tracks: null, list: null };
+  function computeTopSpeeds() {
+    if (!state || !state.tracks) return [];
+    if (topSpeedsCache.tracks === state.tracks && topSpeedsCache.list) return topSpeedsCache.list;
+    const tracks = state.tracks.tracks || [];
+    const partsById = new Map(state.participants.map(p => [p.id, p]));
+    const out = [];
+    for (const t of tracks) {
+      if (!t.track || !t.track.length) continue;
+      let max = 0, at = null;
+      for (const pt of t.track) {
+        if (pt[4] != null && pt[4] > max) { max = pt[4]; at = pt; }
+      }
+      if (max > 0 && at) out.push({ pid: t.participant_id, max, at, p: partsById.get(t.participant_id) });
+    }
+    out.sort((a, b) => b.max - a.max);
+    topSpeedsCache = { tracks: state.tracks, list: out };
+    return out;
   }
 
   let kmMarkersCache = { tracks: null, byPid: null };

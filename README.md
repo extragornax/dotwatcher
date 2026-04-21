@@ -228,6 +228,57 @@ runs as a non-root user under `tini`, and drops all capabilities. Healthcheck
 hits `/` every 30 s. First build takes ~90 s (deps cached layer), incremental
 rebuilds only recompile `src/`.
 
+### Prometheus + Grafana (optional)
+
+`/metrics` is always on. To stand up a local Prometheus + Grafana stack that
+scrapes it, add a sibling `docker-compose.monitoring.yml`:
+
+```yaml
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    volumes: [ "./prometheus.yml:/etc/prometheus/prometheus.yml:ro" ]
+    ports: [ "9090:9090" ]
+    restart: unless-stopped
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes: [ "grafana:/var/lib/grafana" ]
+    ports: [ "3000:3000" ]
+    restart: unless-stopped
+volumes:
+  grafana: {}
+```
+
+with a minimal `prometheus.yml`:
+
+```yaml
+global: { scrape_interval: 30s }
+scrape_configs:
+  - job_name: madcap_fast
+    static_configs:
+      - targets: ["host.docker.internal:9004"]   # or "madcap_fast:9004" on the same compose network
+```
+
+Bring it up with `docker compose -f docker-compose.monitoring.yml up -d`,
+add Prometheus (`http://prometheus:9090`) as a Grafana data source at
+`http://127.0.0.1:3000`, and create panels from queries like:
+
+- **Cache age per slug** — `madcap_fast_cache_age_seconds`
+- **Upstream latency trend** — `madcap_fast_upstream_last_ms`
+- **304 rate** — `rate(madcap_fast_responses_not_modified_total[5m])`
+- **Error rate** — `rate(madcap_fast_upstream_errors_total[5m])`
+- **Cache body size** — `madcap_fast_cache_body_bytes / 1024 / 1024` (MB)
+
+For **race-data** analytics (per-rider time series, rank-over-time worms,
+etc.) this Prometheus setup only covers operational health. The natural
+next step is a background exporter that publishes metrics like
+`madcap_rider_distance_km{slug,bib,name}` from each refresh, or writing
+snapshots to a Timescale / ClickHouse database and using Grafana's SQL
+data source.
+
 ### Auto-deploy from GitHub
 
 `.github/workflows/deploy.yml` SSHes into a target host on every push to
@@ -253,9 +304,12 @@ of the workflow file.
 The server exposes:
 
 - `GET  /`                       → HTML page — event picker (grid of all events)
-- `GET  /event/:slug`            → HTML page — single-event view (list + map tabs)
+- `GET  /event/:slug`            → HTML page — single-event view (list + map + feed tabs)
 - `GET  /api/events`             → cached events list (refreshed every 5 min)
+- `GET  /api/events/csv`         → events list as CSV
 - `GET  /api/event/:slug`        → combined JSON, pre-compressed, ETag-aware (30 s refresh)
+- `GET  /api/event/:slug/csv`    → current leaderboard (rank, bib, name, distance, speed, etc.) as CSV
+- `GET  /metrics`                → Prometheus text-format metrics (request counters, cache ages and sizes per slug, upstream latencies, refresh/error counts)
 
 ---
 

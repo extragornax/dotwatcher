@@ -1,8 +1,10 @@
 use std::{
     collections::HashMap,
+    fmt::Write as _,
     net::SocketAddr,
     path::{Path as FsPath, PathBuf},
     sync::Arc,
+    sync::atomic::{AtomicU64, Ordering},
     time::{Duration, Instant},
 };
 
@@ -47,11 +49,22 @@ struct EventsListCache {
     snapshot: RwLock<Option<Snapshot>>,
 }
 
+#[derive(Default)]
+struct Metrics {
+    requests_event: AtomicU64,
+    requests_events_list: AtomicU64,
+    responses_304: AtomicU64,
+    refreshes: AtomicU64,
+    upstream_errors: AtomicU64,
+    csv_exports: AtomicU64,
+}
+
 struct AppState {
     client: Client,
     events: RwLock<HashMap<String, Arc<EventCache>>>,
     events_list: Arc<EventsListCache>,
     cache_dir: Option<PathBuf>,
+    metrics: Arc<Metrics>,
 }
 
 fn event_cache_path(dir: &FsPath, slug: &str) -> PathBuf {
@@ -284,7 +297,12 @@ async fn ensure_cache(state: &Arc<AppState>, slug: &str) -> Arc<EventCache> {
         slug: slug.to_string(),
     });
     w.insert(slug.to_string(), cache.clone());
-    spawn_refresher(state.client.clone(), cache.clone(), state.cache_dir.clone());
+    spawn_refresher(
+        state.client.clone(),
+        cache.clone(),
+        state.cache_dir.clone(),
+        state.metrics.clone(),
+    );
     cache
 }
 
@@ -326,7 +344,12 @@ async fn restore_from_disk(state: &Arc<AppState>) {
                         slug: slug.clone(),
                     });
                     state.events.write().await.insert(slug.clone(), cache.clone());
-                    spawn_refresher(state.client.clone(), cache, state.cache_dir.clone());
+                    spawn_refresher(
+                        state.client.clone(),
+                        cache,
+                        state.cache_dir.clone(),
+                        state.metrics.clone(),
+                    );
                     info!(slug = %slug, "restored event cache from disk");
                 }
                 Err(e) => warn!(slug = %slug, error = %e, "snapshot reconstruction failed"),
@@ -348,7 +371,12 @@ async fn restore_from_disk(state: &Arc<AppState>) {
     }
 }
 
-fn spawn_refresher(client: Client, cache: Arc<EventCache>, cache_dir: Option<PathBuf>) {
+fn spawn_refresher(
+    client: Client,
+    cache: Arc<EventCache>,
+    cache_dir: Option<PathBuf>,
+    metrics: Arc<Metrics>,
+) {
     tokio::spawn(async move {
         loop {
             match fetch_combined(&client, &cache.slug).await {
@@ -366,9 +394,13 @@ fn spawn_refresher(client: Client, cache: Arc<EventCache>, cache_dir: Option<Pat
                             warn!(slug = %cache.slug, error = %e, "persist failed");
                         }
                     }
+                    metrics.refreshes.fetch_add(1, Ordering::Relaxed);
                     *cache.snapshot.write().await = Some(snap);
                 }
-                Err(e) => warn!(slug = %cache.slug, error = %e, "refresh failed"),
+                Err(e) => {
+                    warn!(slug = %cache.slug, error = %e, "refresh failed");
+                    metrics.upstream_errors.fetch_add(1, Ordering::Relaxed);
+                }
             }
             tokio::time::sleep(REFRESH_INTERVAL).await;
         }
@@ -379,6 +411,7 @@ fn spawn_events_list_refresher(
     client: Client,
     cache: Arc<EventsListCache>,
     cache_dir: Option<PathBuf>,
+    metrics: Arc<Metrics>,
 ) {
     tokio::spawn(async move {
         loop {
@@ -396,9 +429,13 @@ fn spawn_events_list_refresher(
                             warn!(error = %e, "events list persist failed");
                         }
                     }
+                    metrics.refreshes.fetch_add(1, Ordering::Relaxed);
                     *cache.snapshot.write().await = Some(snap);
                 }
-                Err(e) => warn!(error = %e, "events list refresh failed"),
+                Err(e) => {
+                    warn!(error = %e, "events list refresh failed");
+                    metrics.upstream_errors.fetch_add(1, Ordering::Relaxed);
+                }
             }
             tokio::time::sleep(EVENTS_LIST_REFRESH).await;
         }
@@ -410,6 +447,7 @@ async fn combined_handler(
     Path(slug): Path<String>,
     headers: HeaderMap,
 ) -> Response {
+    state.metrics.requests_event.fetch_add(1, Ordering::Relaxed);
     if !slug_ok(&slug) {
         return (StatusCode::BAD_REQUEST, "bad slug").into_response();
     }
@@ -430,10 +468,15 @@ async fn combined_handler(
         snap,
         &headers,
         "public, max-age=15, stale-while-revalidate=60",
+        Some(&state.metrics),
     )
 }
 
 async fn events_list_handler(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    state
+        .metrics
+        .requests_events_list
+        .fetch_add(1, Ordering::Relaxed);
     let deadline = Instant::now() + Duration::from_secs(20);
     let snap = loop {
         if let Some(s) = state.events_list.snapshot.read().await.clone() {
@@ -449,16 +492,25 @@ async fn events_list_handler(State(state): State<Arc<AppState>>, headers: Header
         snap,
         &headers,
         "public, max-age=60, stale-while-revalidate=300",
+        Some(&state.metrics),
     )
 }
 
-fn serve_snapshot(snap: Snapshot, headers: &HeaderMap, cache_control: &'static str) -> Response {
+fn serve_snapshot(
+    snap: Snapshot,
+    headers: &HeaderMap,
+    cache_control: &'static str,
+    metrics: Option<&Arc<Metrics>>,
+) -> Response {
     let stale = snap.fetched_at.elapsed() > STALE_AFTER;
 
     let if_none_match = headers
         .get(header::IF_NONE_MATCH)
         .and_then(|v| v.to_str().ok());
     if if_none_match == Some(snap.etag.as_str()) {
+        if let Some(m) = metrics {
+            m.responses_304.fetch_add(1, Ordering::Relaxed);
+        }
         let mut h = HeaderMap::new();
         h.insert(header::ETAG, HeaderValue::from_str(&snap.etag).unwrap());
         return (StatusCode::NOT_MODIFIED, h).into_response();
@@ -515,6 +567,280 @@ fn slug_ok(s: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
+async fn metrics_handler(State(state): State<Arc<AppState>>) -> Response {
+    let m = &state.metrics;
+    let mut out = String::with_capacity(2048);
+    let _ = writeln!(
+        out,
+        "# HELP madcap_fast_requests_total Total API requests handled\n\
+         # TYPE madcap_fast_requests_total counter"
+    );
+    let _ = writeln!(
+        out,
+        "madcap_fast_requests_total{{path=\"event\"}} {}",
+        m.requests_event.load(Ordering::Relaxed)
+    );
+    let _ = writeln!(
+        out,
+        "madcap_fast_requests_total{{path=\"events_list\"}} {}",
+        m.requests_events_list.load(Ordering::Relaxed)
+    );
+    let _ = writeln!(
+        out,
+        "madcap_fast_requests_total{{path=\"csv\"}} {}",
+        m.csv_exports.load(Ordering::Relaxed)
+    );
+    let _ = writeln!(
+        out,
+        "# HELP madcap_fast_responses_not_modified_total Total 304 responses\n\
+         # TYPE madcap_fast_responses_not_modified_total counter\n\
+         madcap_fast_responses_not_modified_total {}",
+        m.responses_304.load(Ordering::Relaxed)
+    );
+    let _ = writeln!(
+        out,
+        "# HELP madcap_fast_upstream_refreshes_total Successful upstream refreshes\n\
+         # TYPE madcap_fast_upstream_refreshes_total counter\n\
+         madcap_fast_upstream_refreshes_total {}",
+        m.refreshes.load(Ordering::Relaxed)
+    );
+    let _ = writeln!(
+        out,
+        "# HELP madcap_fast_upstream_errors_total Upstream refresh failures\n\
+         # TYPE madcap_fast_upstream_errors_total counter\n\
+         madcap_fast_upstream_errors_total {}",
+        m.upstream_errors.load(Ordering::Relaxed)
+    );
+
+    let caches: Vec<(String, Arc<EventCache>)> = state
+        .events
+        .read()
+        .await
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+
+    let _ = writeln!(
+        out,
+        "# HELP madcap_fast_cache_age_seconds Age of the cached snapshot per slug\n\
+         # TYPE madcap_fast_cache_age_seconds gauge"
+    );
+    let _ = writeln!(
+        out,
+        "# HELP madcap_fast_cache_body_bytes Raw JSON body size per cached slug\n\
+         # TYPE madcap_fast_cache_body_bytes gauge"
+    );
+    let _ = writeln!(
+        out,
+        "# HELP madcap_fast_upstream_last_ms Last upstream refresh duration per slug\n\
+         # TYPE madcap_fast_upstream_last_ms gauge"
+    );
+    for (slug, cache) in &caches {
+        if let Some(snap) = cache.snapshot.read().await.as_ref() {
+            let age = snap.fetched_at.elapsed().as_secs_f64();
+            let _ = writeln!(
+                out,
+                "madcap_fast_cache_age_seconds{{slug=\"{slug}\"}} {age}"
+            );
+            let _ = writeln!(
+                out,
+                "madcap_fast_cache_body_bytes{{slug=\"{slug}\"}} {}",
+                snap.body.len()
+            );
+            let _ = writeln!(
+                out,
+                "madcap_fast_upstream_last_ms{{slug=\"{slug}\"}} {}",
+                snap.upstream_ms
+            );
+        }
+    }
+
+    if let Some(snap) = state.events_list.snapshot.read().await.as_ref() {
+        let _ = writeln!(
+            out,
+            "madcap_fast_events_list_cache_age_seconds {}",
+            snap.fetched_at.elapsed().as_secs_f64()
+        );
+        let _ = writeln!(
+            out,
+            "madcap_fast_events_list_cache_body_bytes {}",
+            snap.body.len()
+        );
+    }
+
+    let mut h = HeaderMap::new();
+    h.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/plain; version=0.0.4; charset=utf-8"),
+    );
+    h.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("no-store"),
+    );
+    (StatusCode::OK, h, out).into_response()
+}
+
+fn csv_str(v: &Value) -> String {
+    match v {
+        Value::Null => String::new(),
+        Value::String(s) => {
+            if s.contains(',') || s.contains('"') || s.contains('\n') || s.contains('\r') {
+                format!("\"{}\"", s.replace('"', "\"\""))
+            } else {
+                s.clone()
+            }
+        }
+        _ => v.to_string(),
+    }
+}
+fn csv_num(v: &Value) -> String {
+    match v {
+        Value::Number(n) => n.to_string(),
+        _ => String::new(),
+    }
+}
+fn csv_bool(v: &Value) -> String {
+    match v {
+        Value::Bool(b) => b.to_string(),
+        _ => String::new(),
+    }
+}
+
+async fn event_csv_handler(
+    State(state): State<Arc<AppState>>,
+    Path(slug): Path<String>,
+) -> Response {
+    state.metrics.csv_exports.fetch_add(1, Ordering::Relaxed);
+    if !slug_ok(&slug) {
+        return (StatusCode::BAD_REQUEST, "bad slug").into_response();
+    }
+    let cache = ensure_cache(&state, &slug).await;
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let snap = loop {
+        if let Some(s) = cache.snapshot.read().await.clone() {
+            break s;
+        }
+        if Instant::now() > deadline {
+            return (StatusCode::GATEWAY_TIMEOUT, "cold cache, upstream slow").into_response();
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    };
+
+    let v: Value = match serde_json::from_slice(&snap.body) {
+        Ok(v) => v,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "parse").into_response(),
+    };
+    let participants = v
+        .get("participants")
+        .and_then(|p| p.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let mut csv = String::with_capacity(participants.len() * 180);
+    csv.push_str("overall_rank,category,category_rank,bib,first_name,last_name,nickname,country,distance_km,speed_kmh,distance_to_next_cp_km,battery_pct,last_ping,status,sleeping\n");
+    for p in participants {
+        let get = |k: &str| p.get(k).cloned().unwrap_or(Value::Null);
+        let category = p
+            .get("attributes")
+            .and_then(|a| a.get("category"))
+            .cloned()
+            .unwrap_or(Value::Null);
+        let dtc = p
+            .get("distance_to_next_cp")
+            .and_then(|d| d.get("distance"))
+            .cloned()
+            .unwrap_or(Value::Null);
+        let _ = writeln!(
+            csv,
+            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+            csv_num(&get("overall_rank")),
+            csv_str(&category),
+            csv_num(&get("rank")),
+            csv_str(&get("bib")),
+            csv_str(&get("first_name")),
+            csv_str(&get("last_name")),
+            csv_str(&get("nickname")),
+            csv_str(&get("country")),
+            csv_num(&get("distance")),
+            csv_num(&get("speed")),
+            csv_num(&dtc),
+            csv_num(&get("battery")),
+            csv_str(&get("last_ping")),
+            csv_str(&get("status")),
+            csv_bool(&get("sleeping")),
+        );
+    }
+    let mut h = HeaderMap::new();
+    h.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/csv; charset=utf-8"),
+    );
+    h.insert(
+        header::CONTENT_DISPOSITION,
+        HeaderValue::from_str(&format!(
+            "attachment; filename=\"{slug}-leaderboard.csv\""
+        ))
+        .unwrap(),
+    );
+    h.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=15"),
+    );
+    (StatusCode::OK, h, csv).into_response()
+}
+
+async fn events_csv_handler(State(state): State<Arc<AppState>>) -> Response {
+    state.metrics.csv_exports.fetch_add(1, Ordering::Relaxed);
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let snap = loop {
+        if let Some(s) = state.events_list.snapshot.read().await.clone() {
+            break s;
+        }
+        if Instant::now() > deadline {
+            return (StatusCode::GATEWAY_TIMEOUT, "cold cache, upstream slow").into_response();
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    };
+    let v: Value = serde_json::from_slice(&snap.body).unwrap_or(Value::Null);
+    let events = v
+        .get("events")
+        .and_then(|e| e.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let mut csv = String::with_capacity(events.len() * 120);
+    csv.push_str("slug,name,start_place,end_place,start_date,end_date,distance,surface,participants\n");
+    for e in events {
+        let get = |k: &str| e.get(k).cloned().unwrap_or(Value::Null);
+        let _ = writeln!(
+            csv,
+            "{},{},{},{},{},{},{},{},{}",
+            csv_str(&get("slug")),
+            csv_str(&get("name")),
+            csv_str(&get("start_place_name")),
+            csv_str(&get("end_place_name")),
+            csv_str(&get("start_date")),
+            csv_str(&get("end_date")),
+            csv_str(&get("distance")),
+            csv_str(&get("surface")),
+            csv_num(&get("participants")),
+        );
+    }
+    let mut h = HeaderMap::new();
+    h.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/csv; charset=utf-8"),
+    );
+    h.insert(
+        header::CONTENT_DISPOSITION,
+        HeaderValue::from_static("attachment; filename=\"events.csv\""),
+    );
+    h.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=60"),
+    );
+    (StatusCode::OK, h, csv).into_response()
+}
+
 async fn index() -> impl IntoResponse {
     let mut h = HeaderMap::new();
     h.insert(
@@ -555,17 +881,24 @@ async fn main() -> Result<()> {
     let events_list = Arc::new(EventsListCache {
         snapshot: RwLock::new(None),
     });
+    let metrics = Arc::new(Metrics::default());
 
     let state = Arc::new(AppState {
         client: client.clone(),
         events: RwLock::new(HashMap::new()),
         events_list: events_list.clone(),
         cache_dir: cache_dir.clone(),
+        metrics: metrics.clone(),
     });
 
     restore_from_disk(&state).await;
 
-    spawn_events_list_refresher(client.clone(), events_list.clone(), cache_dir.clone());
+    spawn_events_list_refresher(
+        client.clone(),
+        events_list.clone(),
+        cache_dir.clone(),
+        metrics.clone(),
+    );
 
     let warm_slug =
         std::env::var("MADCAP_WARM_SLUG").unwrap_or_else(|_| "desertus-bikus-26".into());
@@ -580,7 +913,10 @@ async fn main() -> Result<()> {
         .route("/", get(index))
         .route("/event/{slug}", get(index))
         .route("/api/event/{slug}", get(combined_handler))
+        .route("/api/event/{slug}/csv", get(event_csv_handler))
         .route("/api/events", get(events_list_handler))
+        .route("/api/events/csv", get(events_csv_handler))
+        .route("/metrics", get(metrics_handler))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state);

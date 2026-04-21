@@ -11,7 +11,10 @@ services:
     environment:
       PORT: "9004"
       MADCAP_WARM_SLUG: "${MADCAP_WARM_SLUG:-desertus-bikus-26}"
+      MADCAP_CACHE_DIR: "${MADCAP_CACHE_DIR:-/var/cache/madcap_fast}"
       RUST_LOG: "${RUST_LOG:-madcap_fast=info,tower_http=info}"
+    volumes:
+      - cache:/var/cache/madcap_fast
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9004/"]
       interval: 30s
@@ -21,3 +24,6 @@ services:
     read_only: true
     cap_drop:
       - ALL
+
+volumes:
+  cache:

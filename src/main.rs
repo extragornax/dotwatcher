@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     net::SocketAddr,
+    path::{Path as FsPath, PathBuf},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -50,6 +51,25 @@ struct AppState {
     client: Client,
     events: RwLock<HashMap<String, Arc<EventCache>>>,
     events_list: Arc<EventsListCache>,
+    cache_dir: Option<PathBuf>,
+}
+
+fn event_cache_path(dir: &FsPath, slug: &str) -> PathBuf {
+    dir.join("events").join(format!("{slug}.json"))
+}
+
+fn events_list_cache_path(dir: &FsPath) -> PathBuf {
+    dir.join("events_list.json")
+}
+
+fn persist_bytes(path: &FsPath, bytes: &[u8]) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, bytes)?;
+    std::fs::rename(&tmp, path)?;
+    Ok(())
 }
 
 #[derive(Serialize)]
@@ -264,11 +284,71 @@ async fn ensure_cache(state: &Arc<AppState>, slug: &str) -> Arc<EventCache> {
         slug: slug.to_string(),
     });
     w.insert(slug.to_string(), cache.clone());
-    spawn_refresher(state.client.clone(), cache.clone());
+    spawn_refresher(state.client.clone(), cache.clone(), state.cache_dir.clone());
     cache
 }
 
-fn spawn_refresher(client: Client, cache: Arc<EventCache>) {
+async fn restore_from_disk(state: &Arc<AppState>) {
+    let Some(dir) = state.cache_dir.clone() else {
+        return;
+    };
+    let events_dir = dir.join("events");
+    if events_dir.is_dir() {
+        let entries = match std::fs::read_dir(&events_dir) {
+            Ok(r) => r,
+            Err(e) => {
+                warn!(dir = ?events_dir, error = %e, "read_dir failed");
+                return;
+            }
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("json") {
+                continue;
+            }
+            let Some(slug) = path.file_stem().and_then(|s| s.to_str()).map(String::from) else {
+                continue;
+            };
+            if !slug_ok(&slug) {
+                continue;
+            }
+            let bytes = match std::fs::read(&path) {
+                Ok(b) => b,
+                Err(e) => {
+                    warn!(path = ?path, error = %e, "read failed");
+                    continue;
+                }
+            };
+            match snapshot_from_bytes(bytes, 0).await {
+                Ok(snap) => {
+                    let cache = Arc::new(EventCache {
+                        snapshot: RwLock::new(Some(snap)),
+                        slug: slug.clone(),
+                    });
+                    state.events.write().await.insert(slug.clone(), cache.clone());
+                    spawn_refresher(state.client.clone(), cache, state.cache_dir.clone());
+                    info!(slug = %slug, "restored event cache from disk");
+                }
+                Err(e) => warn!(slug = %slug, error = %e, "snapshot reconstruction failed"),
+            }
+        }
+    }
+    let list_path = events_list_cache_path(&dir);
+    if list_path.is_file() {
+        match std::fs::read(&list_path) {
+            Ok(bytes) => match snapshot_from_bytes(bytes, 0).await {
+                Ok(snap) => {
+                    *state.events_list.snapshot.write().await = Some(snap);
+                    info!("restored events list cache from disk");
+                }
+                Err(e) => warn!(error = %e, "events list reconstruction failed"),
+            },
+            Err(e) => warn!(error = %e, "events list read failed"),
+        }
+    }
+}
+
+fn spawn_refresher(client: Client, cache: Arc<EventCache>, cache_dir: Option<PathBuf>) {
     tokio::spawn(async move {
         loop {
             match fetch_combined(&client, &cache.slug).await {
@@ -280,6 +360,12 @@ fn spawn_refresher(client: Client, cache: Arc<EventCache>) {
                         upstream_ms = snap.upstream_ms,
                         "refreshed"
                     );
+                    if let Some(dir) = &cache_dir {
+                        let path = event_cache_path(dir, &cache.slug);
+                        if let Err(e) = persist_bytes(&path, &snap.body) {
+                            warn!(slug = %cache.slug, error = %e, "persist failed");
+                        }
+                    }
                     *cache.snapshot.write().await = Some(snap);
                 }
                 Err(e) => warn!(slug = %cache.slug, error = %e, "refresh failed"),
@@ -289,7 +375,11 @@ fn spawn_refresher(client: Client, cache: Arc<EventCache>) {
     });
 }
 
-fn spawn_events_list_refresher(client: Client, cache: Arc<EventsListCache>) {
+fn spawn_events_list_refresher(
+    client: Client,
+    cache: Arc<EventsListCache>,
+    cache_dir: Option<PathBuf>,
+) {
     tokio::spawn(async move {
         loop {
             match fetch_events_list(&client).await {
@@ -300,6 +390,12 @@ fn spawn_events_list_refresher(client: Client, cache: Arc<EventsListCache>) {
                         upstream_ms = snap.upstream_ms,
                         "events list refreshed"
                     );
+                    if let Some(dir) = &cache_dir {
+                        let path = events_list_cache_path(dir);
+                        if let Err(e) = persist_bytes(&path, &snap.body) {
+                            warn!(error = %e, "events list persist failed");
+                        }
+                    }
                     *cache.snapshot.write().await = Some(snap);
                 }
                 Err(e) => warn!(error = %e, "events list refresh failed"),
@@ -448,16 +544,28 @@ async fn main() -> Result<()> {
         .user_agent("madcap-fast/0.1")
         .build()?;
 
+    let cache_dir = std::env::var("MADCAP_CACHE_DIR")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from);
+    if let Some(dir) = &cache_dir {
+        info!(dir = ?dir, "cache persistence enabled");
+    }
+
     let events_list = Arc::new(EventsListCache {
         snapshot: RwLock::new(None),
     });
-    spawn_events_list_refresher(client.clone(), events_list.clone());
 
     let state = Arc::new(AppState {
-        client,
+        client: client.clone(),
         events: RwLock::new(HashMap::new()),
-        events_list,
+        events_list: events_list.clone(),
+        cache_dir: cache_dir.clone(),
     });
+
+    restore_from_disk(&state).await;
+
+    spawn_events_list_refresher(client.clone(), events_list.clone(), cache_dir.clone());
 
     let warm_slug =
         std::env::var("MADCAP_WARM_SLUG").unwrap_or_else(|_| "desertus-bikus-26".into());

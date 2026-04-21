@@ -88,6 +88,14 @@ Nothing exotic.
   pre-compressed buffer.
 - **Introspection headers.** `x-upstream-ms`, `x-cache-age-ms`, `x-cache-stale`
   so the frontend can display live cache freshness.
+- **Optional disk persistence.** When `MADCAP_CACHE_DIR` is set, every refresh
+  atomically writes the raw combined JSON to
+  `<dir>/events/<slug>.json` (and the events list to
+  `<dir>/events_list.json`). On startup the server walks the directory and
+  rebuilds `Snapshot`s (brotli + gzip + ETag are regenerated from the bytes),
+  so the first request after a restart is already warm. The 30 s refresher
+  then overwrites with fresh upstream data. Docker compose enables this by
+  default with a named `cache` volume.
 - **Benchmark.** `cargo bench --bench merge_tracks` exercises
   `merge_track_pages` (pure CPU work from pagination) at three realistic sizes.
 
@@ -238,6 +246,7 @@ of the workflow file.
 | ------------------ | --------------------- | -------------------------------------------- |
 | `PORT`             | `9004`                | bind port                                    |
 | `MADCAP_WARM_SLUG` | `desertus-bikus-26`   | slug to pre-warm on boot; set empty to skip  |
+| `MADCAP_CACHE_DIR` | *(unset)*             | directory to persist snapshots to; unset = in-memory only. Compose sets this to `/var/cache/madcap_fast` and mounts a named volume there. |
 | `RUST_LOG`         | `madcap_fast=info`    | standard `tracing_subscriber` filter         |
 | `HOST_PORT`        | `9004`                | compose only: host-side port mapping         |
 

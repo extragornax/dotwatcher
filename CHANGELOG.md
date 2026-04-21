@@ -15,6 +15,9 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Entries 
 - **Shared cursor on the 3 profile graphs** — a range slider below the elevation / speed / battery sparklines moves a gold vertical line across all three in lockstep, and hovering any of the graphs drives the same cursor. A readout below the slider prints the timestamp (localized) + elevation / speed / battery at the nearest point.
 - **GitHub Actions auto-deploy** — `.github/workflows/deploy.yml` SSHes into a host on every push to `master` (or manual `workflow_dispatch`), runs `git pull --ff-only` + `docker compose up -d --build`, then polls the container's healthcheck until it's `healthy`. Parameterized via repo secrets (`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, optional `DEPLOY_PORT`) and an optional `DEPLOY_PATH` variable (default `/srv/madcap_fast`). README gained a short "Auto-deploy from GitHub" section.
 
+### Added
+- **Disk cache persistence across restarts** — new `MADCAP_CACHE_DIR` env var. When set, each refresh atomically writes the raw combined JSON to `<dir>/events/<slug>.json` (and the events list to `<dir>/events_list.json`) via tmp-file + rename. On startup the server walks the directory and rebuilds brotli / gzip / ETag via `snapshot_from_bytes`, so the first request after a restart is already warm instead of paying the ~2 s cold-fetch. `docker-compose.yml` enables this by default against a named `cache` volume at `/var/cache/madcap_fast`. Unset env var = in-memory only (previous behavior).
+
 ### Changed
 - **Default bind port is now `9004`** (was `8080`) — matches what `docker-compose.yml` was already exposing on the host. Updated in `src/main.rs`, `Dockerfile`, `docker-compose.yml`, and README.
 

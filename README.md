@@ -261,7 +261,11 @@ Files:
 - `monitoring/grafana/provisioning/dashboards/dashboards.yml` + `monitoring/grafana/dashboards/madcap_fast-race.json` — auto-loaded multi-race dashboard. An **Event** dropdown lists every cached & live slug via `label_values(madcap_event_total_km, slug)`, plus a **Top N riders** slider. Panels: 6 stat cards (participants / active / started / sleeping / finished / course total), rank-over-time worms, distance-over-time, current leaderboard table (rank + bib + name + distance + speed + battery with color-gradient), low-battery watchlist, and the operational refresh-latency + cache-age trends. Folder in Grafana: **madcap_fast**.
 
 Env overrides: `PROMETHEUS_PORT`, `GRAFANA_PORT`, `GRAFANA_USER`,
-`GRAFANA_PASSWORD`, `GF_SERVER_ROOT_URL`, `GF_SERVER_DOMAIN`.
+`GRAFANA_PASSWORD`, `GF_SERVER_ROOT_URL`, `GF_SERVER_DOMAIN`,
+`GF_AUTH_ANONYMOUS_ENABLED` (default **`true`** — anyone who lands on
+the Grafana URL can browse the dashboards with `Viewer` role, i.e.
+**read-only: no edit, no share, no datasource changes**; set to
+`false` to require login).
 
 #### Serving Grafana behind a public domain
 

@@ -18,12 +18,7 @@
 
 services:
   grafana:
-    # Pinned: Grafana 12+ ships the Kubernetes-style dashboard API
-    # (`/apis/dashboard.grafana.app/v2`) by default, which rejects
-    # anonymous reads with 403. 11.3.0 still serves dashboards via the
-    # classic `/api/dashboards/...` path, so `GF_AUTH_ANONYMOUS_ENABLED`
-    # + `Viewer` role actually lets visitors read the board.
-    image: grafana/grafana:11.3.0
+    image: grafana/grafana:latest
     container_name: madcap_fast_grafana
     restart: unless-stopped
     environment:
@@ -38,13 +33,6 @@ services:
       # Leave unset to keep the default (http://localhost:3000).
       GF_SERVER_ROOT_URL: "${GF_SERVER_ROOT_URL:-}"
       GF_SERVER_DOMAIN: "${GF_SERVER_DOMAIN:-}"
-      # Anonymous read-only dashboard viewing. Visitors land directly on
-      # the dashboards with Viewer role (no edit, no share, no admin).
-      # Flip to "false" to require login.
-      GF_AUTH_ANONYMOUS_ENABLED: "${GF_AUTH_ANONYMOUS_ENABLED:-true}"
-      GF_AUTH_ANONYMOUS_ORG_NAME: "Main Org."
-      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
-      GF_AUTH_ANONYMOUS_HIDE_VERSION: "true"
     volumes:
       - grafana-data:/var/lib/grafana
      # - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro

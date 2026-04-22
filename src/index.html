@@ -224,6 +224,7 @@
   .weather-card .wc-main { display: flex; flex-direction: column; gap: 2px; }
   .weather-card .wc-temp { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .weather-card .wc-meta { color: var(--mute); font-size: 12px; }
+  .weather-card .wind-arrow { display: inline-block; color: var(--fg); font-weight: 700; margin-right: 4px; transform-origin: center; }
   .profile.timeline svg { height: 32px; }
   .profile.timeline .move { fill: #3fb950; opacity: 0.22; }
   .profile.timeline .rest { fill: #d29922; opacity: 0.85; }
@@ -352,6 +353,7 @@
       <button id="map-elev" class="map-btn on" type="button" title="toggle course elevation banner" aria-pressed="true">elev</button>
       <button id="map-journals" class="map-btn" type="button" title="toggle journal pins (sleep / pictures)" aria-pressed="false">journals</button>
       <button id="map-follow" class="map-btn" type="button" title="pan map to keep the selected rider centred" aria-pressed="false">follow</button>
+      <button id="map-night" class="map-btn" type="button" title="shade the nighttime hemisphere" aria-pressed="false">night</button>
     </div>
   </div>
   <div class="map-legend">
@@ -440,6 +442,9 @@
 
   const FOLLOW_KEY = 'madcap_map_follow';
   let followSelected = localStorage.getItem(FOLLOW_KEY) === '1';
+
+  const NIGHT_KEY = 'madcap_map_night';
+  let showNight = localStorage.getItem(NIGHT_KEY) === '1';
   let courseProfileCache = { tracks: null, profile: null, totalKm: 0 };
 
   const LABELS_KEY = 'madcap_map_labels';
@@ -906,7 +911,9 @@
       tile: null,
       routes: L.layerGroup().addTo(map),
       cps: L.layerGroup().addTo(map),
+      night: L.layerGroup().addTo(map),
       traces: L.layerGroup().addTo(map),
+      preview: L.layerGroup().addTo(map),
       journals: L.layerGroup().addTo(map),
       participants: (typeof L.markerClusterGroup === 'function'
         ? L.markerClusterGroup({
@@ -1017,6 +1024,7 @@
 
     renderTraces();
     renderJournalPins();
+    renderNightShade();
     renderCactus();
     renderCourseElev();
     if (!cactusTimer) cactusTimer = setInterval(renderCactus, 60000);
@@ -1227,6 +1235,56 @@
     }
   }
 
+  // --- Day/night shading ---
+  function subsolarPoint(date) {
+    const julian = 2440587.5 + date.getTime() / 86400000;
+    const d = julian - 2451545.0;
+    const g = ((357.529 + 0.98560028 * d) % 360) * Math.PI / 180;
+    const q = (280.459 + 0.98564736 * d) % 360;
+    const L = ((q + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) % 360);
+    const e = (23.439 - 0.00000036 * d) * Math.PI / 180;
+    const decl = Math.asin(Math.sin(e) * Math.sin(L * Math.PI / 180)) * 180 / Math.PI;
+    const eot = q - L;
+    const hUTC = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600;
+    let lng = -15 * (hUTC - 12) - eot;
+    lng = ((lng + 540) % 360) - 180;
+    return { lat: decl, lng };
+  }
+
+  function terminatorLat(lngDeg, subLat, subLng) {
+    const H = (lngDeg - subLng) * Math.PI / 180;
+    const delta = subLat * Math.PI / 180;
+    if (Math.abs(Math.tan(delta)) < 1e-9) return 0;
+    return Math.atan(-Math.cos(H) / Math.tan(delta)) * 180 / Math.PI;
+  }
+
+  function renderNightShade() {
+    if (!mapLayers || !mapLayers.night) return;
+    mapLayers.night.clearLayers();
+    if (!showNight) return;
+    const when = new Date(currentPlaybackTime());
+    const sub = subsolarPoint(when);
+    const pts = [];
+    for (let lng = -180; lng <= 180; lng += 2) {
+      pts.push([terminatorLat(lng, sub.lat, sub.lng), lng]);
+    }
+    // The pole that's currently in polar night is the one opposite the sub-solar hemisphere.
+    const nightPole = sub.lat > 0 ? -90 : 90;
+    const poly = pts.slice();
+    poly.push([nightPole, 180], [nightPole, -180]);
+    L.polygon(poly, {
+      stroke: false, fillColor: '#000', fillOpacity: 0.35, interactive: false,
+    }).addTo(mapLayers.night);
+  }
+
+  function setShowNight(v) {
+    showNight = !!v;
+    localStorage.setItem(NIGHT_KEY, showNight ? '1' : '0');
+    const b = document.getElementById('map-night');
+    if (b) { b.classList.toggle('on', showNight); b.setAttribute('aria-pressed', showNight); }
+    if (map) renderNightShade();
+  }
+
   function renderJournalPins() {
     if (!mapLayers) return;
     mapLayers.journals.clearLayers();
@@ -1276,6 +1334,34 @@
       const pt = lastPointOf(selected.id);
       if (pt) map.setView([pt.lat, pt.lng], map.getZoom(), { animate: true });
     }
+  }
+
+  let previewTimer = null;
+  function previewTrace(pid) {
+    if (previewTimer) { clearTimeout(previewTimer); previewTimer = null; }
+    if (!mapLayers || !mapLayers.preview) return;
+    if (!pid) {
+      mapLayers.preview.clearLayers();
+      return;
+    }
+    // tiny debounce to avoid thrashing during fast scroll
+    previewTimer = setTimeout(() => {
+      if (!mapLayers || !mapLayers.preview) return;
+      mapLayers.preview.clearLayers();
+      const tr = ((state.tracks && state.tracks.tracks) || []).find(t => t.participant_id === pid);
+      if (!tr || !tr.track || tr.track.length < 2) return;
+      const startMs = eventStartMs();
+      let pts = tr.track;
+      if (playbackTime != null && startMs) {
+        const relSec = (playbackTime - startMs) / 1000;
+        const idx = binSearchLE(pts, relSec);
+        if (idx < 1) return;
+        pts = pts.slice(0, idx + 1);
+      }
+      L.polyline(pts.map(pt => [pt[1], pt[2]]), {
+        color: '#f1c40f', weight: 3, opacity: 0.9, dashArray: '6 4',
+      }).addTo(mapLayers.preview);
+    }, 40);
   }
 
   function renderTraces() {
@@ -1646,6 +1732,8 @@
         selected = p;
         render();
       });
+      div.addEventListener('mouseenter', () => previewTrace(p.id));
+      div.addEventListener('mouseleave', () => previewTrace(null));
       frag.appendChild(div);
     }
     root.replaceChildren(frag);
@@ -1974,7 +2062,7 @@
     const key = `${lat.toFixed(2)}|${lng.toFixed(2)}`;
     const cached = WEATHER_CACHE.get(key);
     if (cached && (Date.now() - cached.t) < WEATHER_TTL_MS) return cached.data;
-    const qs = `latitude=${lat.toFixed(3)}&longitude=${lng.toFixed(3)}&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,precipitation&wind_speed_unit=kmh&timezone=UTC`;
+    const qs = `latitude=${lat.toFixed(3)}&longitude=${lng.toFixed(3)}&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m,precipitation&wind_speed_unit=kmh&timezone=UTC`;
     try {
       const res = await fetch(`https://api.open-meteo.com/v1/forecast?${qs}`);
       if (!res.ok) return null;
@@ -2035,15 +2123,27 @@
     const temp = c.temperature_2m != null ? `${c.temperature_2m.toFixed(1)} °C` : '—';
     const bits = [];
     if (c.apparent_temperature != null) bits.push(`feels ${c.apparent_temperature.toFixed(1)} °C`);
-    if (c.wind_speed_10m != null) bits.push(`${c.wind_speed_10m.toFixed(0)} km/h wind`);
+    if (c.wind_speed_10m != null) {
+      const windDir = c.wind_direction_10m;
+      const arrow = windDir != null
+        ? `<span class="wind-arrow" style="transform:rotate(${((windDir + 180) % 360)}deg)">↑</span>`
+        : '';
+      const compass = windDir != null ? ` ${compassCardinal(windDir)}` : '';
+      bits.push(`${arrow}${c.wind_speed_10m.toFixed(0)} km/h${compass}`);
+    }
     if (c.precipitation != null && c.precipitation > 0) bits.push(`${c.precipitation} mm precip`);
     fresh.innerHTML = `
       <span class="wc-emoji">${emoji}</span>
       <div class="wc-main">
         <div class="wc-temp">${escape(temp)} · ${escape(label)}</div>
-        <div class="wc-meta">${escape(bits.join(' · '))} · ${lat.toFixed(3)}, ${lng.toFixed(3)}</div>
+        <div class="wc-meta">${bits.join(' · ')} · ${lat.toFixed(3)}, ${lng.toFixed(3)}</div>
       </div>
     `;
+  }
+
+  function compassCardinal(deg) {
+    const names = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+    return names[Math.round(((deg % 360) + 360) % 360 / 45) % 8];
   }
 
   function renderNearby(p) {
@@ -2343,8 +2443,43 @@
   document.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape' && document.getElementById('side-menu').classList.contains('open')) {
       closeSideMenu();
+      return;
+    }
+    if (mode !== 'event') return;
+    const t = ev.target;
+    const tag = (t && t.tagName) || '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
+    if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+    const k = ev.key;
+    if (k === 'j' || k === 'ArrowDown') { moveSelection(1); ev.preventDefault(); }
+    else if (k === 'k' || k === 'ArrowUp') { moveSelection(-1); ev.preventDefault(); }
+    else if (k === 'm') { setTab('map'); ev.preventDefault(); }
+    else if (k === 'l') { setTab('list'); ev.preventDefault(); }
+    else if (k === 'e') { setTab('feed'); ev.preventDefault(); }
+    else if (k === 'f') { if (selected) toggleFav(selected.id); ev.preventDefault(); }
+    else if (k === ' ') { togglePlay(); ev.preventDefault(); }
+    else if (k === '/') {
+      const q = (currentTab === 'map') ? document.getElementById('mapq') : document.getElementById('q');
+      if (q) { q.focus(); q.select(); ev.preventDefault(); }
+    } else if (k === 'Escape') {
+      if (selected) { selected = null; render(); }
     }
   });
+
+  function moveSelection(delta) {
+    if (!state || !state.participants) return;
+    const list = filteredParticipants();
+    if (!list.length) return;
+    let idx = selected ? list.findIndex(p => p.id === selected.id) : -1;
+    idx = idx < 0 ? (delta > 0 ? 0 : list.length - 1)
+                  : Math.max(0, Math.min(list.length - 1, idx + delta));
+    selected = list[idx];
+    render();
+    if (currentTab === 'list') {
+      const el = document.querySelector(`.p[data-id="${CSS.escape(selected.id)}"]`);
+      if (el) el.scrollIntoView({ block: 'nearest' });
+    }
+  }
 
   document.querySelectorAll('[data-ffilter]').forEach(b => {
     b.addEventListener('click', () => {
@@ -2387,6 +2522,7 @@
   document.getElementById('map-elev').addEventListener('click', () => setShowElev(!showElev));
   document.getElementById('map-journals').addEventListener('click', () => setShowJournalPins(!showJournalPins));
   document.getElementById('map-follow').addEventListener('click', () => setFollowSelected(!followSelected));
+  document.getElementById('map-night').addEventListener('click', () => setShowNight(!showNight));
 
   // -------- home view ----------
   function parseISO(s) { return parseUtc(s); }
@@ -2526,6 +2662,8 @@
     if (jBtn) { jBtn.classList.toggle('on', showJournalPins); jBtn.setAttribute('aria-pressed', showJournalPins); }
     const fBtn = document.getElementById('map-follow');
     if (fBtn) { fBtn.classList.toggle('on', followSelected); fBtn.setAttribute('aria-pressed', followSelected); }
+    const nBtn = document.getElementById('map-night');
+    if (nBtn) { nBtn.classList.toggle('on', showNight); nBtn.setAttribute('aria-pressed', showNight); }
     load().then(() => {
       if (urlState.pid) {
         const p = state.participants.find(x => x.id === urlState.pid);

@@ -183,6 +183,20 @@ surface, start and end dates, rankings, website + Instagram links, emergency
 / organiser / technical phone numbers (as `tel:` links), and a 2-column grid
 of sponsor logos. Closes with ✕, backdrop click, or Escape.
 
+##### Keyboard shortcuts (event page)
+
+| Key | Action |
+| --- | --- |
+| `j` / `↓` | next rider in the filtered leaderboard |
+| `k` / `↑` | previous rider |
+| `m` / `l` / `e` | jump to Map / List / Feed tab |
+| `f` | toggle favourite on the currently selected rider |
+| `Space` | play / pause the scrubber |
+| `/` | focus the active search box (leaderboard or map) |
+| `Esc` | clear selection, or close the info drawer |
+
+Suppressed while typing in inputs.
+
 ##### Browser notifications (`🔔`, tab-open only)
 
 Permission-gated. On each 30 s refresh, diffs the new snapshot against the

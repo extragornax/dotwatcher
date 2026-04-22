@@ -219,6 +219,11 @@
   .profile-controls input[type=range] { width: 100%; accent-color: #f1c40f; }
   .profile-readout { color: var(--mute); font-size: 12px; font-variant-numeric: tabular-nums; }
   .profile-readout b { color: var(--fg); font-weight: 600; }
+  .weather-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; margin-top: 14px; display: flex; align-items: center; gap: 14px; font-size: 13px; color: var(--fg); }
+  .weather-card .wc-emoji { font-size: 28px; line-height: 1; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5)); }
+  .weather-card .wc-main { display: flex; flex-direction: column; gap: 2px; }
+  .weather-card .wc-temp { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .weather-card .wc-meta { color: var(--mute); font-size: 12px; }
   .profile.timeline svg { height: 32px; }
   .profile.timeline .move { fill: #3fb950; opacity: 0.22; }
   .profile.timeline .rest { fill: #d29922; opacity: 0.85; }
@@ -1960,6 +1965,87 @@
     `;
   }
 
+  // --- Weather card (Open-Meteo, no API key) ---
+  const WEATHER_CACHE = new Map(); // "lat|lng" → { t: msEpoch, data }
+  const WEATHER_TTL_MS = 15 * 60 * 1000;
+
+  async function fetchWeather(lat, lng) {
+    // Round to ~1 km precision to share cache entries between riders near each other.
+    const key = `${lat.toFixed(2)}|${lng.toFixed(2)}`;
+    const cached = WEATHER_CACHE.get(key);
+    if (cached && (Date.now() - cached.t) < WEATHER_TTL_MS) return cached.data;
+    const qs = `latitude=${lat.toFixed(3)}&longitude=${lng.toFixed(3)}&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,precipitation&wind_speed_unit=kmh&timezone=UTC`;
+    try {
+      const res = await fetch(`https://api.open-meteo.com/v1/forecast?${qs}`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      WEATHER_CACHE.set(key, { t: Date.now(), data });
+      return data;
+    } catch {
+      return null;
+    }
+  }
+
+  function weatherEmoji(code) {
+    if (code == null) return '❓';
+    if (code === 0) return '☀️';
+    if (code <= 2) return '🌤️';
+    if (code === 3) return '☁️';
+    if (code >= 45 && code <= 48) return '🌫️';
+    if (code >= 51 && code <= 57) return '🌦️';
+    if (code >= 61 && code <= 67) return '🌧️';
+    if (code >= 71 && code <= 77) return '🌨️';
+    if (code >= 80 && code <= 82) return '🌧️';
+    if (code >= 85 && code <= 86) return '❄️';
+    if (code >= 95) return '⛈️';
+    return '❓';
+  }
+
+  function weatherLabel(code) {
+    const map = {
+      0: 'Clear sky', 1: 'Mainly clear', 2: 'Partly cloudy', 3: 'Overcast',
+      45: 'Fog', 48: 'Icy fog',
+      51: 'Light drizzle', 53: 'Drizzle', 55: 'Heavy drizzle',
+      56: 'Freezing drizzle', 57: 'Heavy freezing drizzle',
+      61: 'Light rain', 63: 'Rain', 65: 'Heavy rain',
+      66: 'Freezing rain', 67: 'Heavy freezing rain',
+      71: 'Light snow', 73: 'Snow', 75: 'Heavy snow',
+      77: 'Snow grains',
+      80: 'Rain showers', 81: 'Heavy showers', 82: 'Violent showers',
+      85: 'Snow showers', 86: 'Heavy snow showers',
+      95: 'Thunderstorm', 96: 'Thunderstorm w/ hail', 99: 'Severe thunderstorm'
+    };
+    return map[code] || (code != null ? `Code ${code}` : '—');
+  }
+
+  async function updateWeatherCard(pid, lat, lng) {
+    const card = document.getElementById('weather-card');
+    if (!card || card.dataset.pid !== pid) return;
+    const data = await fetchWeather(lat, lng);
+    // Selection may have changed while we awaited.
+    const fresh = document.getElementById('weather-card');
+    if (!fresh || fresh.dataset.pid !== pid) return;
+    if (!data || !data.current) {
+      fresh.innerHTML = `<span class="wc-emoji">❓</span><div class="wc-main"><div class="wc-temp">—</div><div class="wc-meta">weather unavailable</div></div>`;
+      return;
+    }
+    const c = data.current;
+    const emoji = weatherEmoji(c.weather_code);
+    const label = weatherLabel(c.weather_code);
+    const temp = c.temperature_2m != null ? `${c.temperature_2m.toFixed(1)} °C` : '—';
+    const bits = [];
+    if (c.apparent_temperature != null) bits.push(`feels ${c.apparent_temperature.toFixed(1)} °C`);
+    if (c.wind_speed_10m != null) bits.push(`${c.wind_speed_10m.toFixed(0)} km/h wind`);
+    if (c.precipitation != null && c.precipitation > 0) bits.push(`${c.precipitation} mm precip`);
+    fresh.innerHTML = `
+      <span class="wc-emoji">${emoji}</span>
+      <div class="wc-main">
+        <div class="wc-temp">${escape(temp)} · ${escape(label)}</div>
+        <div class="wc-meta">${escape(bits.join(' · '))} · ${lat.toFixed(3)}, ${lng.toFixed(3)}</div>
+      </div>
+    `;
+  }
+
   function renderNearby(p) {
     const my = lastPointOf(p.id);
     if (!my) return '';
@@ -2196,6 +2282,7 @@
         <div class="stat"><div class="label">Battery</div><div class="value">${p.battery != null ? p.battery + '%' : '—'}</div></div>
         <div class="stat"><div class="label">Status</div><div class="value">${escape(p.status || '—')}${p.sleeping ? ' · zZz' : ''}</div></div>
       </div>
+      ${lastPoint ? `<div class="weather-card" id="weather-card" data-pid="${escape(p.id)}"><span class="wc-emoji">…</span><div class="wc-main"><div class="wc-temp">loading</div><div class="wc-meta">weather at ${lastPoint[1].toFixed(3)}, ${lastPoint[2].toFixed(3)}</div></div></div>` : ''}
       ${renderProfiles(p)}
       ${renderRestTimeline(p)}
       ${renderSegments(p)}
@@ -2223,6 +2310,7 @@
       ` : `<p style="color:var(--mute)">No track points yet.</p>`}
     `;
     initProfileCursor(p);
+    if (lastPoint) updateWeatherCard(p.id, lastPoint[1], lastPoint[2]);
   }
 
   function escape(s) {

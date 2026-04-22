@@ -130,6 +130,10 @@ box, live rider counts, and banner images. Cards link to `/event/:slug`.
 - **Detail pane** for the selected rider:
   - Headline stats (distance, speed, distance-to-next-CP, ranks, last ping,
     battery, status).
+  - **Current weather** at the rider's last GPS fix (temperature,
+    apparent temperature, wind, precipitation, condition emoji). Sourced
+    from [Open-Meteo](https://open-meteo.com/) client-side — no API key,
+    cached 15 min at ~1 km precision.
   - Inline-SVG **elevation** and **speed** sparklines across the whole track.
   - **Rest & movement timeline** — orange blocks on a green bar marking
     stretches where `speed ≤ 1.5 km/h` for ≥ 20 min, with totals and longest

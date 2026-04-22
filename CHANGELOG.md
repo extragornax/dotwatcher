@@ -7,6 +7,7 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Entries 
 ## [Unreleased]
 
 ### Added
+- **Current weather at the rider's GPS fix** — the detail view now shows a compact card with temperature, apparent temperature, weather-code emoji + label (WMO code mapping: clear / clouds / fog / rain / snow / thunder), wind speed, and precipitation. Sourced from [Open-Meteo](https://open-meteo.com/) (no API key, CORS-friendly). Cached in-browser for 15 minutes at ~1 km grid precision so multiple nearby riders share a response and rapid selection-switching doesn't spam the API. Guards against stale callbacks when the user changes selection mid-fetch.
 - **Cactus-delta metrics on `/metrics`** — two new gauges. `madcap_event_cactus_km{slug}` = `fraction_of_elapsed_event_time × total_km` (clamped to [0, 1]), computed from the parsed `info.start_date` / `info.end_date` every 30 s. `madcap_rider_cactus_delta_km{slug, bib, name, category}` = `rider_distance − cactus_km` (positive = ahead of the pacer). Grafana can now plot "who's ahead of the cactus", pacer position over time, and delta histograms directly — no PromQL gymnastics.
 - **Auto-follow selected rider on the map** — new `follow` toggle in the map ⚙ settings popover (default off, persisted in `localStorage:madcap_map_follow`). When on, `renderMap` pans the map to the selected rider's latest GPS fix (preserving zoom) after each markers update, including during scrubber playback — so you can watch one rider march across Iberia without chasing the marker.
 

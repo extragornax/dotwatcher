@@ -225,6 +225,12 @@
   .weather-card .wc-temp { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .weather-card .wc-meta { color: var(--mute); font-size: 12px; }
   .weather-card .wind-arrow { display: inline-block; color: var(--fg); font-weight: 700; margin-right: 4px; transform-origin: center; }
+  .wind-mark { width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 800; text-shadow: 0 0 2px #000, 0 0 3px #000; pointer-events: none; transform-origin: center; }
+  .wind-mark.w0 { color: #8b949e; } /* calm */
+  .wind-mark.w1 { color: #58a6ff; } /* light */
+  .wind-mark.w2 { color: #3fb950; } /* moderate */
+  .wind-mark.w3 { color: #d29922; } /* strong */
+  .wind-mark.w4 { color: #f85149; } /* gale */
   .profile.timeline svg { height: 32px; }
   .profile.timeline .move { fill: #3fb950; opacity: 0.22; }
   .profile.timeline .rest { fill: #d29922; opacity: 0.85; }
@@ -354,6 +360,7 @@
       <button id="map-journals" class="map-btn" type="button" title="toggle journal pins (sleep / pictures)" aria-pressed="false">journals</button>
       <button id="map-follow" class="map-btn" type="button" title="pan map to keep the selected rider centred" aria-pressed="false">follow</button>
       <button id="map-night" class="map-btn" type="button" title="shade the nighttime hemisphere" aria-pressed="false">night</button>
+      <button id="map-wind" class="map-btn" type="button" title="overlay a grid of wind arrows over the course" aria-pressed="false">wind</button>
     </div>
   </div>
   <div class="map-legend">
@@ -445,6 +452,11 @@
 
   const NIGHT_KEY = 'madcap_map_night';
   let showNight = localStorage.getItem(NIGHT_KEY) === '1';
+
+  const WIND_KEY = 'madcap_map_wind';
+  let showWind = localStorage.getItem(WIND_KEY) === '1';
+  let windFetchedAt = 0;
+  let windPointsCache = null;  // [{ lat, lng, speed, dir }]
   let courseProfileCache = { tracks: null, profile: null, totalKm: 0 };
 
   const LABELS_KEY = 'madcap_map_labels';
@@ -912,6 +924,7 @@
       routes: L.layerGroup().addTo(map),
       cps: L.layerGroup().addTo(map),
       night: L.layerGroup().addTo(map),
+      wind: L.layerGroup().addTo(map),
       traces: L.layerGroup().addTo(map),
       preview: L.layerGroup().addTo(map),
       journals: L.layerGroup().addTo(map),
@@ -1025,6 +1038,7 @@
     renderTraces();
     renderJournalPins();
     renderNightShade();
+    renderWindOverlay();
     renderCactus();
     renderCourseElev();
     if (!cactusTimer) cactusTimer = setInterval(renderCactus, 60000);
@@ -1233,6 +1247,100 @@
       });
       cactusMarker.addTo(map);
     }
+  }
+
+  // --- Wind flow overlay ---
+  function windBand(kmh) {
+    if (kmh == null) return 0;
+    if (kmh < 5)  return 0;
+    if (kmh < 15) return 1;
+    if (kmh < 30) return 2;
+    if (kmh < 50) return 3;
+    return 4;
+  }
+
+  function routeBounds() {
+    // Prefer the Cactus route (the real course); fall back to participant spread.
+    const cp = computeCactusPath();
+    if (cp && cp.coords.length) {
+      let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+      for (const [lat, lng] of cp.coords) {
+        if (lat < minLat) minLat = lat;
+        if (lat > maxLat) maxLat = lat;
+        if (lng < minLng) minLng = lng;
+        if (lng > maxLng) maxLng = lng;
+      }
+      return { minLat, maxLat, minLng, maxLng };
+    }
+    return null;
+  }
+
+  async function fetchWindGrid() {
+    const b = routeBounds();
+    if (!b) return null;
+    // 5×5 grid = 25 points, well under Open-Meteo's batch limit.
+    const COLS = 5, ROWS = 5;
+    const lats = [], lngs = [];
+    for (let r = 0; r < ROWS; r++) {
+      const lat = b.minLat + (b.maxLat - b.minLat) * (r / (ROWS - 1));
+      for (let c = 0; c < COLS; c++) {
+        const lng = b.minLng + (b.maxLng - b.minLng) * (c / (COLS - 1));
+        lats.push(lat.toFixed(3));
+        lngs.push(lng.toFixed(3));
+      }
+    }
+    const qs = `latitude=${lats.join(',')}&longitude=${lngs.join(',')}&current=wind_speed_10m,wind_direction_10m&wind_speed_unit=kmh&timezone=UTC`;
+    try {
+      const res = await fetch(`https://api.open-meteo.com/v1/forecast?${qs}`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      // Batched Open-Meteo returns an array; single point returns an object.
+      const arr = Array.isArray(data) ? data : [data];
+      const out = [];
+      for (let i = 0; i < arr.length; i++) {
+        const c = arr[i].current;
+        if (!c) continue;
+        out.push({
+          lat: parseFloat(lats[i]),
+          lng: parseFloat(lngs[i]),
+          speed: c.wind_speed_10m,
+          dir: c.wind_direction_10m,
+        });
+      }
+      windPointsCache = out;
+      windFetchedAt = Date.now();
+      return out;
+    } catch {
+      return null;
+    }
+  }
+
+  async function renderWindOverlay() {
+    if (!mapLayers || !mapLayers.wind) return;
+    mapLayers.wind.clearLayers();
+    if (!showWind) return;
+    // Refresh every 30 min; fetch on first enable too.
+    const age = Date.now() - windFetchedAt;
+    if (!windPointsCache || age > 30 * 60 * 1000) {
+      await fetchWindGrid();
+    }
+    if (!windPointsCache) return;
+    for (const p of windPointsCache) {
+      if (p.speed == null || p.dir == null) continue;
+      const band = windBand(p.speed);
+      const rot = (p.dir + 180) % 360;
+      const html = `<div class="wind-mark w${band}" style="transform:rotate(${rot}deg)">↑<sup style="font-size:9px;margin-left:1px;font-weight:600">${p.speed.toFixed(0)}</sup></div>`;
+      const icon = L.divIcon({ className: '', html, iconSize: [22, 22], iconAnchor: [11, 11] });
+      L.marker([p.lat, p.lng], { icon, keyboard: false, interactive: false }).addTo(mapLayers.wind);
+    }
+  }
+
+  function setShowWind(v) {
+    showWind = !!v;
+    localStorage.setItem(WIND_KEY, showWind ? '1' : '0');
+    const b = document.getElementById('map-wind');
+    if (b) { b.classList.toggle('on', showWind); b.setAttribute('aria-pressed', showWind); }
+    if (map) renderWindOverlay();
   }
 
   // --- Day/night shading ---
@@ -2523,6 +2631,7 @@
   document.getElementById('map-journals').addEventListener('click', () => setShowJournalPins(!showJournalPins));
   document.getElementById('map-follow').addEventListener('click', () => setFollowSelected(!followSelected));
   document.getElementById('map-night').addEventListener('click', () => setShowNight(!showNight));
+  document.getElementById('map-wind').addEventListener('click', () => setShowWind(!showWind));
 
   // -------- home view ----------
   function parseISO(s) { return parseUtc(s); }
@@ -2664,6 +2773,8 @@
     if (fBtn) { fBtn.classList.toggle('on', followSelected); fBtn.setAttribute('aria-pressed', followSelected); }
     const nBtn = document.getElementById('map-night');
     if (nBtn) { nBtn.classList.toggle('on', showNight); nBtn.setAttribute('aria-pressed', showNight); }
+    const wBtn = document.getElementById('map-wind');
+    if (wBtn) { wBtn.classList.toggle('on', showWind); wBtn.setAttribute('aria-pressed', showWind); }
     load().then(() => {
       if (urlState.pid) {
         const p = state.participants.find(x => x.id === urlState.pid);

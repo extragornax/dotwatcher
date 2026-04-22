@@ -6,6 +6,9 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Entries 
 
 ## [Unreleased]
 
+### Added
+- **Wind density slider + zoom-adaptive particle count.** New range slider in the map ⚙ popover (10–100 %, persisted in `localStorage:madcap_map_wind_density`). `effectiveParticleMultiplier()` multiplies a base density by the slider fraction and by a zoom scale (0.25× under zoom 6, 0.5× at 6–7, 1× ≥ 8), so zooming out across Iberia auto-thins the flow before the slider touches it. A `zoomend` listener re-renders the velocity layer whenever the zoom changes while wind is on.
+
 ### Changed
 - **Map elevation banner follows the selected rider.** `computeCourseProfile` now prefers the selected rider's own track (cached by `selected.id`); cursor is placed at their cumulative km at the scrubber time (via `binSearchLE` on their track points). With no selection, falls back to the previous behaviour — leader's track with the cactus-pacer cursor. Meta line names whose profile you're looking at.
 - **Wind-flow overlay is now an animated particle flow** (like earth.nullschool.net) via [`leaflet-velocity`](https://github.com/onaci/leaflet-velocity). Grid bumped to 10×10 (100 points — Open-Meteo's batch max), each fetched `wind_speed_10m`/`wind_direction_10m` is converted into U/V components (`u = -s·sin(dir_rad)`, `v = -s·cos(dir_rad)` for the meteorological "from" convention), packed into a two-record GRIB-like structure, and handed to `L.velocityLayer`. Particles drift along the vector field on a canvas layer with trail fading, plus a live-value read-out in the bottom-left corner. Falls back to the previous static arrow grid if `leaflet-velocity` fails to load from the CDN.

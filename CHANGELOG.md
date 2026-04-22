@@ -6,6 +6,10 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Entries 
 
 ## [Unreleased]
 
+### Added
+- **Cactus-delta metrics on `/metrics`** — two new gauges. `madcap_event_cactus_km{slug}` = `fraction_of_elapsed_event_time × total_km` (clamped to [0, 1]), computed from the parsed `info.start_date` / `info.end_date` every 30 s. `madcap_rider_cactus_delta_km{slug, bib, name, category}` = `rider_distance − cactus_km` (positive = ahead of the pacer). Grafana can now plot "who's ahead of the cactus", pacer position over time, and delta histograms directly — no PromQL gymnastics.
+- **Auto-follow selected rider on the map** — new `follow` toggle in the map ⚙ settings popover (default off, persisted in `localStorage:madcap_map_follow`). When on, `renderMap` pans the map to the selected rider's latest GPS fix (preserving zoom) after each markers update, including during scrubber playback — so you can watch one rider march across Iberia without chasing the marker.
+
 ### Fixed
 - **Overtake feed history survives restarts and is the same for every viewer.** Previously each browser tracked its own in-memory `overtakes` array that reset on every page reload. Tracking moved server-side: `EventCache` now carries a rolling `VecDeque<OvertakeRecord>` (capped at 500) plus a `prev_ranks` map; the refresher diffs new vs old `overall_rank` per rider and pushes any improvements into the deque. The deque is atomically written to `<cache_dir>/overtakes/<slug>.json` on every refresh and read back on boot via `restore_from_disk` (which also seeds `prev_ranks` from the restored snapshot so the next refresh can detect changes). New endpoint `GET /api/event/{slug}/overtakes` returns the deque as JSON. The frontend's `trackOvertakes` + `prevOverallRanks` are gone; replaced by `loadOvertakes()` which fetches from the new endpoint on each poll and whenever the Feed tab renders.
 

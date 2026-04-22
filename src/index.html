@@ -346,6 +346,7 @@
       <button id="map-traces" class="map-btn on" type="button" title="toggle traces" aria-pressed="true">traces</button>
       <button id="map-elev" class="map-btn on" type="button" title="toggle course elevation banner" aria-pressed="true">elev</button>
       <button id="map-journals" class="map-btn" type="button" title="toggle journal pins (sleep / pictures)" aria-pressed="false">journals</button>
+      <button id="map-follow" class="map-btn" type="button" title="pan map to keep the selected rider centred" aria-pressed="false">follow</button>
     </div>
   </div>
   <div class="map-legend">
@@ -431,6 +432,9 @@
 
   const JOURNALS_KEY = 'madcap_map_journals';
   let showJournalPins = localStorage.getItem(JOURNALS_KEY) === '1';
+
+  const FOLLOW_KEY = 'madcap_map_follow';
+  let followSelected = localStorage.getItem(FOLLOW_KEY) === '1';
   let courseProfileCache = { tracks: null, profile: null, totalKm: 0 };
 
   const LABELS_KEY = 'madcap_map_labels';
@@ -1013,6 +1017,12 @@
     if (!cactusTimer) cactusTimer = setInterval(renderCactus, 60000);
     updateScrubberUI();
 
+    // Auto-follow: keep the selected rider centred.
+    if (followSelected && selected) {
+      const pt = lastPointOf(selected.id);
+      if (pt) map.setView([pt.lat, pt.lng], map.getZoom(), { animate: true });
+    }
+
     // Fit once on first render.
     if (!mapLayers.didFit) {
       let bounds = null;
@@ -1250,6 +1260,17 @@
     const b = document.getElementById('map-journals');
     if (b) { b.classList.toggle('on', showJournalPins); b.setAttribute('aria-pressed', showJournalPins); }
     if (map) renderJournalPins();
+  }
+
+  function setFollowSelected(v) {
+    followSelected = !!v;
+    localStorage.setItem(FOLLOW_KEY, followSelected ? '1' : '0');
+    const b = document.getElementById('map-follow');
+    if (b) { b.classList.toggle('on', followSelected); b.setAttribute('aria-pressed', followSelected); }
+    if (followSelected && map && selected) {
+      const pt = lastPointOf(selected.id);
+      if (pt) map.setView([pt.lat, pt.lng], map.getZoom(), { animate: true });
+    }
   }
 
   function renderTraces() {
@@ -2277,6 +2298,7 @@
   document.getElementById('map-traces').addEventListener('click', () => setShowTraces(!showTraces));
   document.getElementById('map-elev').addEventListener('click', () => setShowElev(!showElev));
   document.getElementById('map-journals').addEventListener('click', () => setShowJournalPins(!showJournalPins));
+  document.getElementById('map-follow').addEventListener('click', () => setFollowSelected(!followSelected));
 
   // -------- home view ----------
   function parseISO(s) { return parseUtc(s); }
@@ -2414,6 +2436,8 @@
     if (elevBtn) { elevBtn.classList.toggle('on', showElev); elevBtn.setAttribute('aria-pressed', showElev); }
     const jBtn = document.getElementById('map-journals');
     if (jBtn) { jBtn.classList.toggle('on', showJournalPins); jBtn.setAttribute('aria-pressed', showJournalPins); }
+    const fBtn = document.getElementById('map-follow');
+    if (fBtn) { fBtn.classList.toggle('on', followSelected); fBtn.setAttribute('aria-pressed', followSelected); }
     load().then(() => {
       if (urlState.pid) {
         const p = state.participants.find(x => x.id === urlState.pid);

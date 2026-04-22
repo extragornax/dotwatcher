@@ -789,6 +789,31 @@ fn render_event_race_metrics(slug: &str, body: &[u8]) -> Option<String> {
         "madcap_event_total_km{{slug=\"{slug_esc}\"}} {total_km}"
     );
 
+    // Cactus pacer position at scrape time. Fraction of elapsed event time,
+    // clamped to [0, 1]; multiplied by total_km gives cactus_km.
+    let start_ts = info
+        .get("start_date")
+        .and_then(|v| v.as_str())
+        .and_then(parse_iso_utc);
+    let end_ts = info
+        .get("end_date")
+        .and_then(|v| v.as_str())
+        .and_then(parse_iso_utc);
+    let cactus_km = match (start_ts, end_ts, total_km) {
+        (Some(s), Some(e), t) if e > s && t > 0.0 => {
+            let now = now_unix_s();
+            let f = ((now - s) as f64 / (e - s) as f64).clamp(0.0, 1.0);
+            Some(f * t)
+        }
+        _ => None,
+    };
+    if let Some(ck) = cactus_km {
+        let _ = writeln!(
+            out,
+            "madcap_event_cactus_km{{slug=\"{slug_esc}\"}} {ck}"
+        );
+    }
+
     let racing: Vec<&Value> = participants
         .iter()
         .filter(|p| {
@@ -847,6 +872,13 @@ fn render_event_race_metrics(slug: &str, body: &[u8]) -> Option<String> {
             }
             if total_km > 0.0 && d >= total_km - 0.5 {
                 finished += 1;
+            }
+            if let Some(ck) = cactus_km {
+                let _ = writeln!(
+                    out,
+                    "madcap_rider_cactus_delta_km{{{labels}}} {}",
+                    d - ck
+                );
             }
         }
         if let Some(sp) = p.get("speed").and_then(|v| v.as_f64()) {
@@ -1023,6 +1055,10 @@ async fn metrics_handler(State(state): State<Arc<AppState>>) -> Response {
     let _ = writeln!(out, "# TYPE madcap_rider_sleeping gauge");
     let _ = writeln!(out, "# HELP madcap_rider_distance_to_next_cp_km Straight-line distance to the next checkpoint");
     let _ = writeln!(out, "# TYPE madcap_rider_distance_to_next_cp_km gauge");
+    let _ = writeln!(out, "# HELP madcap_event_cactus_km Virtual pacer position — fraction of elapsed event time × total_km");
+    let _ = writeln!(out, "# TYPE madcap_event_cactus_km gauge");
+    let _ = writeln!(out, "# HELP madcap_rider_cactus_delta_km Rider distance minus cactus km (positive = ahead of the pacer)");
+    let _ = writeln!(out, "# TYPE madcap_rider_cactus_delta_km gauge");
 
     for (_slug, cache) in &caches {
         if let Some(text) = cache.race_metrics.read().await.as_ref() {

@@ -328,11 +328,13 @@ Each cached event contributes a block labelled
 - `madcap_rider_battery_pct`
 - `madcap_rider_sleeping` (0 / 1)
 - `madcap_rider_distance_to_next_cp_km`
+- `madcap_rider_cactus_delta_km` — rider's km ahead of (positive) or behind (negative) the virtual pacer
 
 Plus event-level gauges labelled `{slug}`:
-`madcap_event_total_km`, `madcap_event_participants`,
-`madcap_event_active`, `madcap_event_sleeping`,
-`madcap_event_started`, `madcap_event_finished`.
+`madcap_event_total_km`, `madcap_event_cactus_km`,
+`madcap_event_participants`, `madcap_event_active`,
+`madcap_event_sleeping`, `madcap_event_started`,
+`madcap_event_finished`.
 
 Example Grafana queries:
 
@@ -344,6 +346,9 @@ Example Grafana queries:
   (not a histogram out of the box — use `quantile_over_time(0.5, madcap_rider_speed_kmh[15m])` for a quick median)
 - **Finishers counter** — `madcap_event_finished{slug="desertus-bikus-26"}`
 - **Low batteries** — `madcap_rider_battery_pct < 20`
+- **Who's ahead of the pacer right now** — `madcap_rider_cactus_delta_km > 0`
+- **Pacer position over time** — `madcap_event_cactus_km{slug="..."}`
+- **Cactus delta histogram** — `histogram_quantile(0.5, sum by (le) (madcap_rider_cactus_delta_km))` (or `quantile_over_time` for a quick median)
 
 Cardinality on desertus-bikus-26: ~376 riders × 7 metrics ≈ 2 500 active
 series per event. Multi-event Prometheus handles tens of thousands

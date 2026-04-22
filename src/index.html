@@ -8,6 +8,7 @@
       integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet-velocity@2.1.5/dist/leaflet-velocity.css" />
 <style>
   :root {
     --bg: #0b0d10;
@@ -383,6 +384,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="https://unpkg.com/leaflet-velocity@2.1.5/dist/leaflet-velocity.js"></script>
 <script>
 (() => {
   const mode = location.pathname.startsWith('/event/') ? 'event' : 'home';
@@ -456,7 +458,8 @@
   const WIND_KEY = 'madcap_map_wind';
   let showWind = localStorage.getItem(WIND_KEY) === '1';
   let windFetchedAt = 0;
-  let windPointsCache = null;  // [{ lat, lng, speed, dir }]
+  let windCache = null;   // { points, bounds, cols, rows }
+  let velocityLayer = null;
   let courseProfileCache = { tracks: null, profile: null, totalKm: 0 };
 
   const LABELS_KEY = 'madcap_map_labels';
@@ -1278,11 +1281,12 @@
   async function fetchWindGrid() {
     const b = routeBounds();
     if (!b) return null;
-    // 5×5 grid = 25 points, well under Open-Meteo's batch limit.
-    const COLS = 5, ROWS = 5;
+    // 10×10 grid = 100 points, max of Open-Meteo's batched current endpoint.
+    // Row-major, TOP-LEFT first (leaflet-velocity convention: la1 = top, going south).
+    const COLS = 10, ROWS = 10;
     const lats = [], lngs = [];
     for (let r = 0; r < ROWS; r++) {
-      const lat = b.minLat + (b.maxLat - b.minLat) * (r / (ROWS - 1));
+      const lat = b.maxLat - (b.maxLat - b.minLat) * (r / (ROWS - 1));
       for (let c = 0; c < COLS; c++) {
         const lng = b.minLng + (b.maxLng - b.minLng) * (c / (COLS - 1));
         lats.push(lat.toFixed(3));
@@ -1294,44 +1298,109 @@
       const res = await fetch(`https://api.open-meteo.com/v1/forecast?${qs}`);
       if (!res.ok) return null;
       const data = await res.json();
-      // Batched Open-Meteo returns an array; single point returns an object.
       const arr = Array.isArray(data) ? data : [data];
-      const out = [];
-      for (let i = 0; i < arr.length; i++) {
-        const c = arr[i].current;
-        if (!c) continue;
-        out.push({
+      const points = arr.map((x, i) => {
+        const c = x.current || {};
+        return {
           lat: parseFloat(lats[i]),
           lng: parseFloat(lngs[i]),
           speed: c.wind_speed_10m,
           dir: c.wind_direction_10m,
-        });
-      }
-      windPointsCache = out;
+        };
+      });
+      windCache = { points, bounds: b, cols: COLS, rows: ROWS };
       windFetchedAt = Date.now();
-      return out;
+      return windCache;
     } catch {
       return null;
     }
   }
 
-  async function renderWindOverlay() {
-    if (!mapLayers || !mapLayers.wind) return;
-    mapLayers.wind.clearLayers();
-    if (!showWind) return;
-    // Refresh every 30 min; fetch on first enable too.
-    const age = Date.now() - windFetchedAt;
-    if (!windPointsCache || age > 30 * 60 * 1000) {
-      await fetchWindGrid();
+  // Convert our grid to the GRIB-like two-record structure leaflet-velocity
+  // expects. parameterNumber 2 = U component (east), 3 = V component (north).
+  // Open-Meteo wind_direction is the direction wind COMES FROM (meteorological),
+  // so the "toward" vector is negative of sin/cos of that angle.
+  function buildGribFromCache(cache) {
+    if (!cache || !cache.points.length) return null;
+    const { bounds, cols, rows, points } = cache;
+    const dx = (bounds.maxLng - bounds.minLng) / (cols - 1);
+    const dy = (bounds.maxLat - bounds.minLat) / (rows - 1);
+    const u = new Array(cols * rows).fill(0);
+    const v = new Array(cols * rows).fill(0);
+    for (let i = 0; i < points.length; i++) {
+      const p = points[i];
+      if (p.speed == null || p.dir == null) continue;
+      const rad = p.dir * Math.PI / 180;
+      u[i] = -p.speed * Math.sin(rad);
+      v[i] = -p.speed * Math.cos(rad);
     }
-    if (!windPointsCache) return;
-    for (const p of windPointsCache) {
+    const refTime = new Date().toISOString();
+    const header = {
+      parameterUnit: 'km.h-1',
+      refTime,
+      lo1: bounds.minLng,
+      la1: bounds.maxLat,  // top (row 0)
+      lo2: bounds.maxLng,
+      la2: bounds.minLat,  // bottom
+      dx, dy, nx: cols, ny: rows,
+    };
+    return [
+      { header: { ...header, parameterCategory: 2, parameterNumber: 2 }, data: u },
+      { header: { ...header, parameterCategory: 2, parameterNumber: 3 }, data: v },
+    ];
+  }
+
+  function renderWindArrowsFallback() {
+    if (!mapLayers || !mapLayers.wind || !windCache) return;
+    mapLayers.wind.clearLayers();
+    for (const p of windCache.points) {
       if (p.speed == null || p.dir == null) continue;
       const band = windBand(p.speed);
       const rot = (p.dir + 180) % 360;
       const html = `<div class="wind-mark w${band}" style="transform:rotate(${rot}deg)">↑<sup style="font-size:9px;margin-left:1px;font-weight:600">${p.speed.toFixed(0)}</sup></div>`;
       const icon = L.divIcon({ className: '', html, iconSize: [22, 22], iconAnchor: [11, 11] });
       L.marker([p.lat, p.lng], { icon, keyboard: false, interactive: false }).addTo(mapLayers.wind);
+    }
+  }
+
+  async function renderWindOverlay() {
+    if (!mapLayers || !mapLayers.wind) return;
+    mapLayers.wind.clearLayers();
+    if (velocityLayer) {
+      try { map.removeLayer(velocityLayer); } catch {}
+      velocityLayer = null;
+    }
+    if (!showWind) return;
+    // Refresh every 30 min; fetch on first enable.
+    const age = Date.now() - windFetchedAt;
+    if (!windCache || age > 30 * 60 * 1000) await fetchWindGrid();
+    if (!windCache) return;
+
+    if (typeof L.velocityLayer === 'function') {
+      const grib = buildGribFromCache(windCache);
+      if (!grib) return;
+      velocityLayer = L.velocityLayer({
+        displayValues: true,
+        displayOptions: {
+          velocityType: 'Wind',
+          position: 'bottomleft',
+          emptyString: 'No wind data',
+          angleConvention: 'bearingCW',
+          displayPosition: 'bottomleft',
+          displayEmptyString: 'No wind data',
+          speedUnit: 'k/h',
+        },
+        data: grib,
+        maxVelocity: 60,
+        velocityScale: 0.007,
+        particleAge: 60,
+        particleMultiplier: 1 / 150,
+        lineWidth: 1.5,
+        frameRate: 20,
+      }).addTo(map);
+    } else {
+      // CDN failed — fall back to static arrow markers.
+      renderWindArrowsFallback();
     }
   }
 

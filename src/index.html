@@ -462,8 +462,8 @@
   const WIND_KEY = 'madcap_map_wind';
   let showWind = localStorage.getItem(WIND_KEY) === '1';
   const WIND_DENSITY_KEY = 'madcap_map_wind_density';
-  let windDensity = parseInt(localStorage.getItem(WIND_DENSITY_KEY) || '50', 10);
-  if (!(windDensity >= 10 && windDensity <= 100)) windDensity = 50;
+  let windDensity = parseInt(localStorage.getItem(WIND_DENSITY_KEY) || '10', 10);
+  if (!(windDensity >= 10 && windDensity <= 100)) windDensity = 10;
   let windFetchedAt = 0;
   let windCache = null;   // { points, bounds, cols, rows }
   let velocityLayer = null;

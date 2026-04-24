@@ -1054,10 +1054,15 @@
     if (!cactusTimer) cactusTimer = setInterval(renderCactus, 60000);
     updateScrubberUI();
 
-    // Auto-follow: keep the selected rider centred.
+    // Auto-follow: keep the selected rider centred (smooth pan during playback).
     if (followSelected && selected) {
       const pt = lastPointOf(selected.id);
-      if (pt) map.setView([pt.lat, pt.lng], map.getZoom(), { animate: true });
+      if (pt) {
+        const c = map.getCenter();
+        if (Math.abs(c.lat - pt.lat) > 1e-5 || Math.abs(c.lng - pt.lng) > 1e-5) {
+          map.panTo([pt.lat, pt.lng], { animate: true, duration: 0.25, easeLinearity: 0.5, noMoveStart: true });
+        }
+      }
     }
 
     // Fit once on first render.
@@ -1577,7 +1582,7 @@
     if (b) { b.classList.toggle('on', followSelected); b.setAttribute('aria-pressed', followSelected); }
     if (followSelected && map && selected) {
       const pt = lastPointOf(selected.id);
-      if (pt) map.setView([pt.lat, pt.lng], map.getZoom(), { animate: true });
+      if (pt) map.panTo([pt.lat, pt.lng], { animate: true, duration: 0.25, easeLinearity: 0.5 });
     }
   }
 

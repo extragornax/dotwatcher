@@ -8,6 +8,7 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Entries 
 
 ### Changed
 - **Smooth auto-follow during replay.** Replaced `map.setView()` with `map.panTo()` (duration 250 ms, ease-linearity 0.5) and a dead-zone threshold so the camera glides instead of jumping every 200 ms tick. `noMoveStart` prevents the pan from retriggering `movestart` listeners.
+- **Past events sorted by end date (newest first).** The home page now sorts past events by `end_date` descending instead of `start_date`, so the most recently finished event appears at the top.
 
 ### Added
 - **Wind density slider + zoom-adaptive particle count.** New range slider in the map ⚙ popover (10–100 %, persisted in `localStorage:madcap_map_wind_density`). `effectiveParticleMultiplier()` multiplies a base density by the slider fraction and by a zoom scale (0.25× under zoom 6, 0.5× at 6–7, 1× ≥ 8), so zooming out across Iberia auto-thins the flow before the slider touches it. A `zoomend` listener re-renders the velocity layer whenever the zoom changes while wind is on.

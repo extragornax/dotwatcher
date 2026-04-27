@@ -2832,14 +2832,18 @@
       (e.start_place_name || '').toLowerCase().includes(q) ||
       (e.end_place_name || '').toLowerCase().includes(q)
     );
-    // Sort: live first, then upcoming by start asc, then past by start desc
+    // Sort: live first, then upcoming by start asc, then past by end date desc
     const rank = c => c === 'live' ? 0 : c === 'upcoming' ? 1 : 2;
     list.sort((a, b) => {
       const r = rank(a._class) - rank(b._class);
       if (r !== 0) return r;
+      if (a._class === 'past') {
+        const ea = parseISO(a.end_date)?.getTime() ?? 0;
+        const eb = parseISO(b.end_date)?.getTime() ?? 0;
+        return eb - ea;
+      }
       const sa = parseISO(a.start_date)?.getTime() ?? 0;
       const sb = parseISO(b.start_date)?.getTime() ?? 0;
-      if (a._class === 'past') return sb - sa;
       return sa - sb;
     });
 

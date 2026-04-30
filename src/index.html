@@ -75,6 +75,12 @@
   .map-settings-panel select { flex: 1; background: var(--panel-2); border: 1px solid var(--border); color: var(--fg); padding: 4px 6px; border-radius: 4px; font: inherit; font-size: 12px; }
   .map-settings-panel .ms-btns { display: flex; flex-wrap: wrap; gap: 6px; }
   .map-settings-panel .ms-btns .map-btn { flex: 1; min-width: 90px; }
+  .gpx-panel { position: absolute; top: 54px; left: 12px; z-index: 501; background: rgba(20,24,29,0.94); backdrop-filter: blur(8px); border: 1px solid var(--border); border-radius: 8px; padding: 8px 0; display: none; min-width: 200px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+  .gpx-panel.open { display: block; }
+  .gpx-panel button { display: block; width: 100%; text-align: left; background: none; border: none; color: var(--fg); padding: 6px 14px; font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
+  .gpx-panel button:hover { background: var(--panel-2); }
+  .gpx-panel .gpx-sep { border-top: 1px solid var(--border); margin: 4px 0; }
+  #view-map.with-elev .gpx-panel { top: 138px; }
   .plabel { display: inline-flex; align-items: center; gap: 5px; background: rgba(20,24,29,0.88); color: var(--fg); border: 1.5px solid rgba(255,255,255,0.85); border-radius: 12px; padding: 2px 8px 2px 4px; font-size: 11px; font-weight: 600; white-space: nowrap; box-shadow: 0 1px 3px rgba(0,0,0,0.6); line-height: 1; transition: transform .12s ease; }
   .plabel .pdot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; border: 1px solid rgba(0,0,0,0.5); }
   .plabel.selected { transform: scale(1.1); border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent), 0 0 10px var(--accent); }
@@ -342,9 +348,10 @@
     <input id="mapq" type="search" placeholder="jump to rider…" />
     <button id="map-favonly" class="map-btn fav" type="button" title="favorites only" aria-pressed="false">★ only</button>
     <button id="map-settings" class="map-btn" type="button" title="map settings" aria-expanded="false">⚙</button>
-    <button id="map-gpx" class="map-btn" type="button" title="download GPX trace for selected rider" style="display:none">⬇ GPX</button>
+    <button id="map-gpx" class="map-btn" type="button" title="download GPX" style="display:none" aria-expanded="false">⬇ GPX</button>
     <span id="mapcount" style="color: var(--mute)">—</span>
   </div>
+  <div id="gpx-panel" class="gpx-panel"></div>
   <div id="map-settings-panel" class="map-settings-panel" aria-hidden="true">
     <h5>Style</h5>
     <div class="ms-row"><label>Tiles</label><select id="map-theme" title="map style"></select></div>
@@ -1042,20 +1049,10 @@
       ? `${seen.size} favorites on map`
       : `${seen.size} / ${state.participants.length} on map`;
 
+    const hasRoutes = ((state.geo && state.geo.routes) || []).length > 0;
     const hasTracks = ((state.tracks && state.tracks.tracks) || []).length > 0;
     const gpxBtn = document.getElementById('map-gpx');
-    gpxBtn.style.display = hasTracks ? '' : 'none';
-    if (hasTracks && selected) {
-      const tr = (state.tracks.tracks || []).find(t => t.participant_id === selected.id);
-      gpxBtn.disabled = !tr || !tr.track || tr.track.length < 2;
-      const name = `${selected.first_name || ''} ${selected.last_name || ''}`.trim() || 'rider';
-      gpxBtn.title = tr && tr.track && tr.track.length >= 2
-        ? `download GPX for ${name}`
-        : `no trace for ${name}`;
-    } else if (hasTracks) {
-      gpxBtn.disabled = false;
-      gpxBtn.title = 'download GPX (select a rider first for individual trace)';
-    }
+    gpxBtn.style.display = (hasRoutes || hasTracks) ? '' : 'none';
 
     if (typeof mapLayers.participants.refreshClusters === 'function') {
       mapLayers.participants.refreshClusters();
@@ -1665,34 +1662,69 @@
     if (selected) drawTrace(selected.id, 3.5, 0.95);
   }
 
-  function downloadGpx() {
-    if (!state || !state.tracks) return;
-    const tracks = state.tracks.tracks || [];
-    if (!tracks.length) return;
+  function gpxEsc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function gpxSlug() { return location.pathname.split('/').pop() || 'event'; }
+  function triggerDownload(content, filename) {
+    const blob = new Blob([content], { type: 'application/gpx+xml' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  function extractGeoJsonCoords(gj) {
+    if (typeof gj === 'string') { try { gj = JSON.parse(gj); } catch { return []; } }
+    if (!gj) return [];
+    if (gj.type === 'FeatureCollection') return (gj.features || []).flatMap(f => extractGeoJsonCoords(f));
+    if (gj.type === 'Feature') return extractGeoJsonCoords(gj.geometry);
+    if (gj.type === 'LineString') return gj.coordinates || [];
+    if (gj.type === 'MultiLineString') return (gj.coordinates || []).flat();
+    return [];
+  }
+
+  function downloadRouteGpx(routeIdx) {
+    const route = (state.geo.routes || [])[routeIdx];
+    if (!route) return;
+    const coords = extractGeoJsonCoords(route.geojson);
+    if (!coords.length) return;
+    const name = route.name || 'route';
+    let gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="madcap_fast" xmlns="http://www.topografix.com/GPX/1/1">\n<metadata><name>${gpxEsc(name)}</name></metadata>\n`;
+    gpx += `<trk><name>${gpxEsc(name)}</name><trkseg>\n`;
+    for (const c of coords) {
+      gpx += `<trkpt lat="${c[1]}" lon="${c[0]}"`;
+      if (c.length > 2) gpx += `><ele>${c[2]}</ele></trkpt>\n`;
+      else gpx += ` />\n`;
+    }
+    gpx += `</trkseg></trk>\n</gpx>`;
+    triggerDownload(gpx, `${gpxSlug()}_${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.gpx`);
+    closeGpxPanel();
+  }
+
+  function downloadTrackGpx(participantId) {
+    const tracks = (state.tracks && state.tracks.tracks) || [];
     const startMs = eventStartMs();
     if (!startMs) return;
-
+    const partsById = new Map(state.participants.map(p => [p.id, p]));
     let items;
-    if (selected) {
-      const tr = tracks.find(t => t.participant_id === selected.id);
-      if (!tr || !tr.track || tr.track.length < 2) return;
-      const name = `${selected.first_name || ''} ${selected.last_name || ''}`.trim() || 'rider';
-      items = [{ name, track: tr.track }];
-    } else {
-      const partsById = new Map(state.participants.map(p => [p.id, p]));
+    if (participantId === '_all') {
       items = tracks.filter(t => t.track && t.track.length >= 2).map(t => {
         const p = partsById.get(t.participant_id);
         const name = p ? `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'rider' : 'rider';
         return { name, track: t.track };
       });
+    } else {
+      const tr = tracks.find(t => t.participant_id === participantId);
+      if (!tr || !tr.track || tr.track.length < 2) return;
+      const p = partsById.get(participantId);
+      const name = p ? `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'rider' : 'rider';
+      items = [{ name, track: tr.track }];
     }
     if (!items.length) return;
-
-    const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const eventName = (state.info && state.info.name) || 'event';
-    let gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="madcap_fast" xmlns="http://www.topografix.com/GPX/1/1">\n<metadata><name>${esc(eventName)}</name></metadata>\n`;
+    let gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="madcap_fast" xmlns="http://www.topografix.com/GPX/1/1">\n<metadata><name>${gpxEsc(eventName)}</name></metadata>\n`;
     for (const item of items) {
-      gpx += `<trk><name>${esc(item.name)}</name><trkseg>\n`;
+      gpx += `<trk><name>${gpxEsc(item.name)}</name><trkseg>\n`;
       for (const pt of item.track) {
         const ts = new Date(startMs + pt[0] * 1000).toISOString();
         gpx += `<trkpt lat="${pt[1]}" lon="${pt[2]}"><ele>${pt[3]}</ele><time>${ts}</time></trkpt>\n`;
@@ -1700,16 +1732,52 @@
       gpx += `</trkseg></trk>\n`;
     }
     gpx += `</gpx>`;
+    if (participantId === '_all') {
+      triggerDownload(gpx, `${gpxSlug()}_all-riders.gpx`);
+    } else {
+      const p = partsById.get(participantId);
+      const tag = p ? (p.last_name || p.first_name || 'rider').toLowerCase().replace(/[^a-z0-9]+/g, '-') : 'rider';
+      triggerDownload(gpx, `${gpxSlug()}_${tag}.gpx`);
+    }
+    closeGpxPanel();
+  }
 
-    const blob = new Blob([gpx], { type: 'application/gpx+xml' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    const slug = location.pathname.split('/').pop() || 'event';
-    a.download = selected
-      ? `${slug}_${(selected.last_name || selected.first_name || 'rider').toLowerCase()}.gpx`
-      : `${slug}_all.gpx`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+  function closeGpxPanel() {
+    const panel = document.getElementById('gpx-panel');
+    panel.classList.remove('open');
+    document.getElementById('map-gpx').setAttribute('aria-expanded', 'false');
+  }
+
+  function toggleGpxPanel() {
+    const panel = document.getElementById('gpx-panel');
+    const isOpen = panel.classList.toggle('open');
+    document.getElementById('map-gpx').setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    if (!isOpen) return;
+    // close settings panel if open
+    document.getElementById('map-settings-panel').classList.remove('open');
+    document.getElementById('map-settings').setAttribute('aria-expanded', 'false');
+
+    let html = '';
+    const routes = (state.geo && state.geo.routes) || [];
+    if (routes.length) {
+      for (let i = 0; i < routes.length; i++) {
+        const name = routes[i].name || `Route ${i + 1}`;
+        html += `<button data-gpx-route="${i}">📍 ${escape(name)}</button>`;
+      }
+    }
+    const tracks = (state.tracks && state.tracks.tracks) || [];
+    if (tracks.length) {
+      if (routes.length) html += '<div class="gpx-sep"></div>';
+      if (selected) {
+        const tr = tracks.find(t => t.participant_id === selected.id);
+        if (tr && tr.track && tr.track.length >= 2) {
+          const name = `${selected.first_name || ''} ${selected.last_name || ''}`.trim() || 'rider';
+          html += `<button data-gpx-track="${escape(selected.id)}">🚴 ${escape(name)} trace</button>`;
+        }
+      }
+      html += `<button data-gpx-track="_all">🚴 All riders traces</button>`;
+    }
+    panel.innerHTML = html;
   }
 
   function participantPopup(p) {
@@ -2739,6 +2807,7 @@
         const open = panel.classList.toggle('open');
         btn.setAttribute('aria-expanded', open ? 'true' : 'false');
         panel.setAttribute('aria-hidden', open ? 'false' : 'true');
+        if (open) closeGpxPanel();
       });
       document.addEventListener('click', (ev) => {
         if (!panel.classList.contains('open')) return;
@@ -2748,6 +2817,15 @@
         panel.setAttribute('aria-hidden', 'true');
       });
     }
+  }
+  {
+    const gpxBtn = document.getElementById('map-gpx');
+    const gpxP = document.getElementById('gpx-panel');
+    document.addEventListener('click', (ev) => {
+      if (!gpxP.classList.contains('open')) return;
+      if (gpxP.contains(ev.target) || gpxBtn.contains(ev.target)) return;
+      closeGpxPanel();
+    });
   }
 
   document.getElementById('side-menu-open').addEventListener('click', openSideMenu);
@@ -2837,7 +2915,13 @@
   document.getElementById('map-follow').addEventListener('click', () => setFollowSelected(!followSelected));
   document.getElementById('map-night').addEventListener('click', () => setShowNight(!showNight));
   document.getElementById('map-wind').addEventListener('click', () => setShowWind(!showWind));
-  document.getElementById('map-gpx').addEventListener('click', downloadGpx);
+  document.getElementById('map-gpx').addEventListener('click', toggleGpxPanel);
+  document.getElementById('gpx-panel').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-gpx-route],[data-gpx-track]');
+    if (!btn) return;
+    if (btn.dataset.gpxRoute != null) downloadRouteGpx(parseInt(btn.dataset.gpxRoute, 10));
+    else if (btn.dataset.gpxTrack != null) downloadTrackGpx(btn.dataset.gpxTrack);
+  });
   {
     const ds = document.getElementById('map-wind-density');
     if (ds) {

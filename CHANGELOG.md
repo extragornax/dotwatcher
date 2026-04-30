@@ -7,7 +7,7 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Entries 
 ## [Unreleased]
 
 ### Added
-- **Download GPX button on the map.** A "⬇ GPX" button appears in the map overlay when the event has track data. If a rider is selected, downloads their individual trace as GPX; otherwise downloads all riders' traces in a single GPX file. Each track point includes lat/lon, elevation, and absolute timestamp.
+- **Download GPX button on the map.** A "⬇ GPX" button in the map overlay opens a dropdown listing all available downloads: course routes (from geo routes, e.g. "Cactus") and rider traces (selected rider or all riders). Routes are converted from GeoJSON to GPX; rider traces include elevation and absolute timestamps.
 
 ## cd2f1a6 — Sort past events by end date (newest first)
 

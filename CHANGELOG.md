@@ -6,6 +6,9 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Entries 
 
 ## [Unreleased]
 
+### Added
+- **Download GPX button on the map.** A "⬇ GPX" button appears in the map overlay when the event has track data. If a rider is selected, downloads their individual trace as GPX; otherwise downloads all riders' traces in a single GPX file. Each track point includes lat/lon, elevation, and absolute timestamp.
+
 ## cd2f1a6 — Sort past events by end date (newest first)
 
 ### Changed

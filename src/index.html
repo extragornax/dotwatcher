@@ -342,6 +342,7 @@
     <input id="mapq" type="search" placeholder="jump to rider…" />
     <button id="map-favonly" class="map-btn fav" type="button" title="favorites only" aria-pressed="false">★ only</button>
     <button id="map-settings" class="map-btn" type="button" title="map settings" aria-expanded="false">⚙</button>
+    <button id="map-gpx" class="map-btn" type="button" title="download GPX trace for selected rider" style="display:none">⬇ GPX</button>
     <span id="mapcount" style="color: var(--mute)">—</span>
   </div>
   <div id="map-settings-panel" class="map-settings-panel" aria-hidden="true">
@@ -1041,6 +1042,21 @@
       ? `${seen.size} favorites on map`
       : `${seen.size} / ${state.participants.length} on map`;
 
+    const hasTracks = ((state.tracks && state.tracks.tracks) || []).length > 0;
+    const gpxBtn = document.getElementById('map-gpx');
+    gpxBtn.style.display = hasTracks ? '' : 'none';
+    if (hasTracks && selected) {
+      const tr = (state.tracks.tracks || []).find(t => t.participant_id === selected.id);
+      gpxBtn.disabled = !tr || !tr.track || tr.track.length < 2;
+      const name = `${selected.first_name || ''} ${selected.last_name || ''}`.trim() || 'rider';
+      gpxBtn.title = tr && tr.track && tr.track.length >= 2
+        ? `download GPX for ${name}`
+        : `no trace for ${name}`;
+    } else if (hasTracks) {
+      gpxBtn.disabled = false;
+      gpxBtn.title = 'download GPX (select a rider first for individual trace)';
+    }
+
     if (typeof mapLayers.participants.refreshClusters === 'function') {
       mapLayers.participants.refreshClusters();
     }
@@ -1647,6 +1663,53 @@
       drawTrace(id, 2, 0.55);
     }
     if (selected) drawTrace(selected.id, 3.5, 0.95);
+  }
+
+  function downloadGpx() {
+    if (!state || !state.tracks) return;
+    const tracks = state.tracks.tracks || [];
+    if (!tracks.length) return;
+    const startMs = eventStartMs();
+    if (!startMs) return;
+
+    let items;
+    if (selected) {
+      const tr = tracks.find(t => t.participant_id === selected.id);
+      if (!tr || !tr.track || tr.track.length < 2) return;
+      const name = `${selected.first_name || ''} ${selected.last_name || ''}`.trim() || 'rider';
+      items = [{ name, track: tr.track }];
+    } else {
+      const partsById = new Map(state.participants.map(p => [p.id, p]));
+      items = tracks.filter(t => t.track && t.track.length >= 2).map(t => {
+        const p = partsById.get(t.participant_id);
+        const name = p ? `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'rider' : 'rider';
+        return { name, track: t.track };
+      });
+    }
+    if (!items.length) return;
+
+    const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const eventName = (state.info && state.info.name) || 'event';
+    let gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="madcap_fast" xmlns="http://www.topografix.com/GPX/1/1">\n<metadata><name>${esc(eventName)}</name></metadata>\n`;
+    for (const item of items) {
+      gpx += `<trk><name>${esc(item.name)}</name><trkseg>\n`;
+      for (const pt of item.track) {
+        const ts = new Date(startMs + pt[0] * 1000).toISOString();
+        gpx += `<trkpt lat="${pt[1]}" lon="${pt[2]}"><ele>${pt[3]}</ele><time>${ts}</time></trkpt>\n`;
+      }
+      gpx += `</trkseg></trk>\n`;
+    }
+    gpx += `</gpx>`;
+
+    const blob = new Blob([gpx], { type: 'application/gpx+xml' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    const slug = location.pathname.split('/').pop() || 'event';
+    a.download = selected
+      ? `${slug}_${(selected.last_name || selected.first_name || 'rider').toLowerCase()}.gpx`
+      : `${slug}_all.gpx`;
+    a.click();
+    URL.revokeObjectURL(a.href);
   }
 
   function participantPopup(p) {
@@ -2774,6 +2837,7 @@
   document.getElementById('map-follow').addEventListener('click', () => setFollowSelected(!followSelected));
   document.getElementById('map-night').addEventListener('click', () => setShowNight(!showNight));
   document.getElementById('map-wind').addEventListener('click', () => setShowWind(!showWind));
+  document.getElementById('map-gpx').addEventListener('click', downloadGpx);
   {
     const ds = document.getElementById('map-wind-density');
     if (ds) {

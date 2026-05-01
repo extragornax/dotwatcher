@@ -88,6 +88,15 @@ Nothing exotic.
   pre-compressed buffer.
 - **Introspection headers.** `x-upstream-ms`, `x-cache-age-ms`, `x-cache-stale`
   so the frontend can display live cache freshness.
+- **Image proxy.** `GET /img?url=…&w=…` fetches images from
+  `storage.googleapis.com`, resizes to the requested width, converts to WebP,
+  and caches the result on disk (when `DOTWATCHER_CACHE_DIR` is set). Used by
+  the frontend for journal photo thumbnails.
+- **Overtake tracking.** Each 30 s refresh diffs per-rider `overall_rank`
+  against the previous snapshot. Any rank improvement produces an
+  `OvertakeRecord` stored in a capped in-memory deque (persisted to
+  `<dir>/overtakes/<slug>.json` when disk caching is on). Exposed via
+  `GET /api/event/:slug/overtakes`.
 - **Optional disk persistence.** When `DOTWATCHER_CACHE_DIR` is set, every refresh
   atomically writes the raw combined JSON to
   `<dir>/events/<slug>.json` (and the events list to
@@ -98,6 +107,8 @@ Nothing exotic.
   default with a named `cache` volume.
 - **Benchmark.** `cargo bench --bench merge_tracks` exercises
   `merge_track_pages` (pure CPU work from pagination) at three realistic sizes.
+  `bench.mjs` is a Playwright end-to-end benchmark that measures page load,
+  data-usable, and full-render timings against a running instance.
 
 ### Frontend (`src/index.html`, embedded via `include_str!`)
 
@@ -141,6 +152,8 @@ box, live rider counts, and banner images. Cards link to `/event/:slug`.
   - **Segments** table — CP-to-CP split times, the rider's rank for each leg
     (across everyone who completed it) and the gap to the fastest.
   - Full **Checkpoints** table with per-CP cumulative rank + arrival time.
+  - **Nearby riders** — top 10 closest riders by straight-line distance,
+    with gap in km and course-distance delta.
   - Last known position + one-click Google Maps link.
 
 ##### Map tab
@@ -163,6 +176,23 @@ Leaflet, lazy-initialized on first open:
 - **Virtual 🌵 Cactus pacer** — a marker interpolated along the Cactus route
   at `(now − start) / (end − start)` × total distance, updating every 60 s.
   Popup shows % and km.
+- **Elevation banner** — full-width SVG elevation profile of the route,
+  pinned to the top of the map. A vertical cursor tracks the selected rider's
+  position along the course with current elevation and grade. Toggle via the
+  `elev` button.
+- **Auto-follow** — `follow` button keeps the map centred on the selected
+  rider (smooth `panTo` during playback). Persisted in localStorage.
+- **Night shading** — `night` button draws a day/night terminator overlay so
+  you can see which riders are in darkness. Persisted in localStorage.
+- **Wind overlay** — `wind` button fetches a grid of wind speed and direction
+  from [Open-Meteo](https://open-meteo.com/) and renders animated particle
+  flow via leaflet-velocity. A density slider (10–100 %) controls arrow
+  count, auto-scaled by zoom level. Colour-coded by Beaufort band (calm →
+  gale). Cached 15 min, refreshed on significant pan. Persisted in
+  localStorage.
+- **GPX download** — `⬇ GPX` button opens a dropdown with one entry per
+  route plus one per rider with track data. Downloads a standard GPX file
+  with `<trk>` segments.
 - **Time scrubber** (bottom-centre) — range slider over `[event start, now]`,
   play / pause, 5 playback speeds (1 s = 1 min / 5 min / **20 min (default)** /
   1 h / 6 h), `live` button. Scrubbing drives markers, traces, and the cactus
@@ -173,8 +203,9 @@ Leaflet, lazy-initialized on first open:
 
 Global reverse-chronological timeline of journal entries. `PICTURE` entries
 render with a 140×100 thumbnail (click for the full image); `SLEEP` entries
-show rider + location. Filter pills: **All / Photos / Sleeps / ★ favourites**.
-Clicking a rider's name opens their detail in the List tab.
+show rider + location; `OVERTAKE` entries (server-computed) show who passed
+whom and the new rank. Filter pills: **All / Photos / Sleeps / Overtakes /
+★ favourites**. Clicking a rider's name opens their detail in the List tab.
 
 ##### Event info drawer (`ℹ`)
 
@@ -402,6 +433,8 @@ The server exposes:
 - `GET  /api/events/csv`         → events list as CSV
 - `GET  /api/event/:slug`        → combined JSON, pre-compressed, ETag-aware (30 s refresh)
 - `GET  /api/event/:slug/csv`    → current leaderboard (rank, bib, name, distance, speed, etc.) as CSV
+- `GET  /api/event/:slug/overtakes` → rolling overtake history (JSON array, newest first)
+- `GET  /img?url=…&w=…`         → image proxy — fetches from `storage.googleapis.com`, resizes, converts to WebP, disk-cached
 - `GET  /metrics`                → Prometheus text-format metrics (request counters, cache ages and sizes per slug, upstream latencies, refresh/error counts)
 
 ---

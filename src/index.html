@@ -1353,19 +1353,51 @@
   }
 
   function routeBounds() {
-    // Prefer the Cactus route (the real course); fall back to participant spread.
+    let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+    let found = false;
+
     const cp = computeCactusPath();
     if (cp && cp.coords.length) {
-      let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
       for (const [lat, lng] of cp.coords) {
         if (lat < minLat) minLat = lat;
         if (lat > maxLat) maxLat = lat;
         if (lng < minLng) minLng = lng;
         if (lng > maxLng) maxLng = lng;
       }
-      return { minLat, maxLat, minLng, maxLng };
+      found = true;
     }
-    return null;
+
+    if (!found && state && state.geo && state.geo.routes) {
+      for (const route of state.geo.routes) {
+        let gj = route.geojson;
+        if (typeof gj === 'string') { try { gj = JSON.parse(gj); } catch { continue; } }
+        const coords = gj && gj.geometry && gj.geometry.coordinates;
+        if (!Array.isArray(coords)) continue;
+        for (const c of coords) {
+          if (!Array.isArray(c) || c.length < 2) continue;
+          const lat = c[1], lng = c[0];
+          if (lat < minLat) minLat = lat;
+          if (lat > maxLat) maxLat = lat;
+          if (lng < minLng) minLng = lng;
+          if (lng > maxLng) maxLng = lng;
+        }
+        found = true;
+      }
+    }
+
+    if (!found && state && state.participants) {
+      for (const p of state.participants) {
+        const lat = p.latitude, lng = p.longitude;
+        if (lat == null || lng == null) continue;
+        if (lat < minLat) minLat = lat;
+        if (lat > maxLat) maxLat = lat;
+        if (lng < minLng) minLng = lng;
+        if (lng > maxLng) maxLng = lng;
+        found = true;
+      }
+    }
+
+    return found && isFinite(minLat) ? { minLat, maxLat, minLng, maxLng } : null;
   }
 
   async function fetchWindGrid() {

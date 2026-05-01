@@ -44,7 +44,7 @@ services:
     # Other containers reach it via the `monitoring` network by service name.
     # Drop the entire `ports:` block if you never want to curl it from the host.
     ports:
-      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+      - "${PROMETHEUS_PORT:-9090}:9090"
     depends_on:
       - madcap_fast
     networks:

@@ -20,7 +20,7 @@ use axum::{
     routing::get,
 };
 use bytes::Bytes;
-use madcap_fast::merge_track_pages;
+use dotwatcher::merge_track_pages;
 use reqwest::Client;
 use serde::Serialize;
 use serde_json::{Value, value::RawValue};
@@ -790,7 +790,7 @@ fn render_event_race_metrics(slug: &str, body: &[u8]) -> Option<String> {
         .unwrap_or(0.0);
     let _ = writeln!(
         out,
-        "madcap_event_total_km{{slug=\"{slug_esc}\"}} {total_km}"
+        "dotwatcher_event_total_km{{slug=\"{slug_esc}\"}} {total_km}"
     );
 
     // Cactus pacer position at scrape time. Fraction of elapsed event time,
@@ -812,7 +812,7 @@ fn render_event_race_metrics(slug: &str, body: &[u8]) -> Option<String> {
         _ => None,
     };
     if let Some(ck) = cactus_km {
-        let _ = writeln!(out, "madcap_event_cactus_km{{slug=\"{slug_esc}\"}} {ck}");
+        let _ = writeln!(out, "dotwatcher_event_cactus_km{{slug=\"{slug_esc}\"}} {ck}");
     }
 
     let racing: Vec<&Value> = participants
@@ -824,7 +824,7 @@ fn render_event_race_metrics(slug: &str, body: &[u8]) -> Option<String> {
         .collect();
     let _ = writeln!(
         out,
-        "madcap_event_participants{{slug=\"{slug_esc}\"}} {}",
+        "dotwatcher_event_participants{{slug=\"{slug_esc}\"}} {}",
         racing.len()
     );
 
@@ -864,7 +864,7 @@ fn render_event_race_metrics(slug: &str, body: &[u8]) -> Option<String> {
         }
 
         if let Some(d) = p.get("distance").and_then(|v| v.as_f64()) {
-            let _ = writeln!(out, "madcap_rider_distance_km{{{labels}}} {d}");
+            let _ = writeln!(out, "dotwatcher_rider_distance_km{{{labels}}} {d}");
             if d > 0.0 {
                 started += 1;
             }
@@ -872,24 +872,24 @@ fn render_event_race_metrics(slug: &str, body: &[u8]) -> Option<String> {
                 finished += 1;
             }
             if let Some(ck) = cactus_km {
-                let _ = writeln!(out, "madcap_rider_cactus_delta_km{{{labels}}} {}", d - ck);
+                let _ = writeln!(out, "dotwatcher_rider_cactus_delta_km{{{labels}}} {}", d - ck);
             }
         }
         if let Some(sp) = p.get("speed").and_then(|v| v.as_f64()) {
-            let _ = writeln!(out, "madcap_rider_speed_kmh{{{labels}}} {sp}");
+            let _ = writeln!(out, "dotwatcher_rider_speed_kmh{{{labels}}} {sp}");
         }
         if let Some(r) = p.get("overall_rank").and_then(|v| v.as_f64()) {
-            let _ = writeln!(out, "madcap_rider_overall_rank{{{labels}}} {r}");
+            let _ = writeln!(out, "dotwatcher_rider_overall_rank{{{labels}}} {r}");
         }
         if let Some(r) = p.get("rank").and_then(|v| v.as_f64()) {
-            let _ = writeln!(out, "madcap_rider_category_rank{{{labels}}} {r}");
+            let _ = writeln!(out, "dotwatcher_rider_category_rank{{{labels}}} {r}");
         }
         if let Some(b) = p.get("battery").and_then(|v| v.as_f64()) {
-            let _ = writeln!(out, "madcap_rider_battery_pct{{{labels}}} {b}");
+            let _ = writeln!(out, "dotwatcher_rider_battery_pct{{{labels}}} {b}");
         }
         let _ = writeln!(
             out,
-            "madcap_rider_sleeping{{{labels}}} {}",
+            "dotwatcher_rider_sleeping{{{labels}}} {}",
             if sleeping { 1 } else { 0 }
         );
         if let Some(dtc) = p
@@ -897,19 +897,19 @@ fn render_event_race_metrics(slug: &str, body: &[u8]) -> Option<String> {
             .and_then(|v| v.get("distance"))
             .and_then(|v| v.as_f64())
         {
-            let _ = writeln!(out, "madcap_rider_distance_to_next_cp_km{{{labels}}} {dtc}");
+            let _ = writeln!(out, "dotwatcher_rider_distance_to_next_cp_km{{{labels}}} {dtc}");
         }
     }
 
-    let _ = writeln!(out, "madcap_event_active{{slug=\"{slug_esc}\"}} {active}");
+    let _ = writeln!(out, "dotwatcher_event_active{{slug=\"{slug_esc}\"}} {active}");
     let _ = writeln!(
         out,
-        "madcap_event_sleeping{{slug=\"{slug_esc}\"}} {sleeping_total}"
+        "dotwatcher_event_sleeping{{slug=\"{slug_esc}\"}} {sleeping_total}"
     );
-    let _ = writeln!(out, "madcap_event_started{{slug=\"{slug_esc}\"}} {started}");
+    let _ = writeln!(out, "dotwatcher_event_started{{slug=\"{slug_esc}\"}} {started}");
     let _ = writeln!(
         out,
-        "madcap_event_finished{{slug=\"{slug_esc}\"}} {finished}"
+        "dotwatcher_event_finished{{slug=\"{slug_esc}\"}} {finished}"
     );
 
     Some(out)
@@ -920,43 +920,43 @@ async fn metrics_handler(State(state): State<Arc<AppState>>) -> Response {
     let mut out = String::with_capacity(2048);
     let _ = writeln!(
         out,
-        "# HELP madcap_fast_requests_total Total API requests handled\n\
-         # TYPE madcap_fast_requests_total counter"
+        "# HELP dotwatcher_requests_total Total API requests handled\n\
+         # TYPE dotwatcher_requests_total counter"
     );
     let _ = writeln!(
         out,
-        "madcap_fast_requests_total{{path=\"event\"}} {}",
+        "dotwatcher_requests_total{{path=\"event\"}} {}",
         m.requests_event.load(Ordering::Relaxed)
     );
     let _ = writeln!(
         out,
-        "madcap_fast_requests_total{{path=\"events_list\"}} {}",
+        "dotwatcher_requests_total{{path=\"events_list\"}} {}",
         m.requests_events_list.load(Ordering::Relaxed)
     );
     let _ = writeln!(
         out,
-        "madcap_fast_requests_total{{path=\"csv\"}} {}",
+        "dotwatcher_requests_total{{path=\"csv\"}} {}",
         m.csv_exports.load(Ordering::Relaxed)
     );
     let _ = writeln!(
         out,
-        "# HELP madcap_fast_responses_not_modified_total Total 304 responses\n\
-         # TYPE madcap_fast_responses_not_modified_total counter\n\
-         madcap_fast_responses_not_modified_total {}",
+        "# HELP dotwatcher_responses_not_modified_total Total 304 responses\n\
+         # TYPE dotwatcher_responses_not_modified_total counter\n\
+         dotwatcher_responses_not_modified_total {}",
         m.responses_304.load(Ordering::Relaxed)
     );
     let _ = writeln!(
         out,
-        "# HELP madcap_fast_upstream_refreshes_total Successful upstream refreshes\n\
-         # TYPE madcap_fast_upstream_refreshes_total counter\n\
-         madcap_fast_upstream_refreshes_total {}",
+        "# HELP dotwatcher_upstream_refreshes_total Successful upstream refreshes\n\
+         # TYPE dotwatcher_upstream_refreshes_total counter\n\
+         dotwatcher_upstream_refreshes_total {}",
         m.refreshes.load(Ordering::Relaxed)
     );
     let _ = writeln!(
         out,
-        "# HELP madcap_fast_upstream_errors_total Upstream refresh failures\n\
-         # TYPE madcap_fast_upstream_errors_total counter\n\
-         madcap_fast_upstream_errors_total {}",
+        "# HELP dotwatcher_upstream_errors_total Upstream refresh failures\n\
+         # TYPE dotwatcher_upstream_errors_total counter\n\
+         dotwatcher_upstream_errors_total {}",
         m.upstream_errors.load(Ordering::Relaxed)
     );
 
@@ -970,34 +970,34 @@ async fn metrics_handler(State(state): State<Arc<AppState>>) -> Response {
 
     let _ = writeln!(
         out,
-        "# HELP madcap_fast_cache_age_seconds Age of the cached snapshot per slug\n\
-         # TYPE madcap_fast_cache_age_seconds gauge"
+        "# HELP dotwatcher_cache_age_seconds Age of the cached snapshot per slug\n\
+         # TYPE dotwatcher_cache_age_seconds gauge"
     );
     let _ = writeln!(
         out,
-        "# HELP madcap_fast_cache_body_bytes Raw JSON body size per cached slug\n\
-         # TYPE madcap_fast_cache_body_bytes gauge"
+        "# HELP dotwatcher_cache_body_bytes Raw JSON body size per cached slug\n\
+         # TYPE dotwatcher_cache_body_bytes gauge"
     );
     let _ = writeln!(
         out,
-        "# HELP madcap_fast_upstream_last_ms Last upstream refresh duration per slug\n\
-         # TYPE madcap_fast_upstream_last_ms gauge"
+        "# HELP dotwatcher_upstream_last_ms Last upstream refresh duration per slug\n\
+         # TYPE dotwatcher_upstream_last_ms gauge"
     );
     for (slug, cache) in &caches {
         if let Some(snap) = cache.snapshot.read().await.as_ref() {
             let age = snap.fetched_at.elapsed().as_secs_f64();
             let _ = writeln!(
                 out,
-                "madcap_fast_cache_age_seconds{{slug=\"{slug}\"}} {age}"
+                "dotwatcher_cache_age_seconds{{slug=\"{slug}\"}} {age}"
             );
             let _ = writeln!(
                 out,
-                "madcap_fast_cache_body_bytes{{slug=\"{slug}\"}} {}",
+                "dotwatcher_cache_body_bytes{{slug=\"{slug}\"}} {}",
                 snap.body.len()
             );
             let _ = writeln!(
                 out,
-                "madcap_fast_upstream_last_ms{{slug=\"{slug}\"}} {}",
+                "dotwatcher_upstream_last_ms{{slug=\"{slug}\"}} {}",
                 snap.upstream_ms
             );
         }
@@ -1006,12 +1006,12 @@ async fn metrics_handler(State(state): State<Arc<AppState>>) -> Response {
     if let Some(snap) = state.events_list.snapshot.read().await.as_ref() {
         let _ = writeln!(
             out,
-            "madcap_fast_events_list_cache_age_seconds {}",
+            "dotwatcher_events_list_cache_age_seconds {}",
             snap.fetched_at.elapsed().as_secs_f64()
         );
         let _ = writeln!(
             out,
-            "madcap_fast_events_list_cache_body_bytes {}",
+            "dotwatcher_events_list_cache_body_bytes {}",
             snap.body.len()
         );
     }
@@ -1019,79 +1019,79 @@ async fn metrics_handler(State(state): State<Arc<AppState>>) -> Response {
     // Race metrics — emit HELP/TYPE once, then concatenate per-event lines.
     let _ = writeln!(
         out,
-        "# HELP madcap_event_total_km Advertised total course distance in km (parsed from info.distance)"
+        "# HELP dotwatcher_event_total_km Advertised total course distance in km (parsed from info.distance)"
     );
-    let _ = writeln!(out, "# TYPE madcap_event_total_km gauge");
+    let _ = writeln!(out, "# TYPE dotwatcher_event_total_km gauge");
     let _ = writeln!(
         out,
-        "# HELP madcap_event_participants Participant count in the event"
+        "# HELP dotwatcher_event_participants Participant count in the event"
     );
-    let _ = writeln!(out, "# TYPE madcap_event_participants gauge");
+    let _ = writeln!(out, "# TYPE dotwatcher_event_participants gauge");
     let _ = writeln!(
         out,
-        "# HELP madcap_event_active Riders with any ping or REGISTERED/ACTIVE status"
+        "# HELP dotwatcher_event_active Riders with any ping or REGISTERED/ACTIVE status"
     );
-    let _ = writeln!(out, "# TYPE madcap_event_active gauge");
+    let _ = writeln!(out, "# TYPE dotwatcher_event_active gauge");
     let _ = writeln!(
         out,
-        "# HELP madcap_event_sleeping Riders currently flagged sleeping"
+        "# HELP dotwatcher_event_sleeping Riders currently flagged sleeping"
     );
-    let _ = writeln!(out, "# TYPE madcap_event_sleeping gauge");
+    let _ = writeln!(out, "# TYPE dotwatcher_event_sleeping gauge");
     let _ = writeln!(
         out,
-        "# HELP madcap_event_started Riders with non-zero distance"
+        "# HELP dotwatcher_event_started Riders with non-zero distance"
     );
-    let _ = writeln!(out, "# TYPE madcap_event_started gauge");
+    let _ = writeln!(out, "# TYPE dotwatcher_event_started gauge");
     let _ = writeln!(
         out,
-        "# HELP madcap_event_finished Riders within 0.5 km of the course total"
+        "# HELP dotwatcher_event_finished Riders within 0.5 km of the course total"
     );
-    let _ = writeln!(out, "# TYPE madcap_event_finished gauge");
+    let _ = writeln!(out, "# TYPE dotwatcher_event_finished gauge");
     let _ = writeln!(
         out,
-        "# HELP madcap_rider_distance_km Distance covered by the rider in km"
+        "# HELP dotwatcher_rider_distance_km Distance covered by the rider in km"
     );
-    let _ = writeln!(out, "# TYPE madcap_rider_distance_km gauge");
+    let _ = writeln!(out, "# TYPE dotwatcher_rider_distance_km gauge");
     let _ = writeln!(
         out,
-        "# HELP madcap_rider_speed_kmh Current reported speed in km/h"
+        "# HELP dotwatcher_rider_speed_kmh Current reported speed in km/h"
     );
-    let _ = writeln!(out, "# TYPE madcap_rider_speed_kmh gauge");
+    let _ = writeln!(out, "# TYPE dotwatcher_rider_speed_kmh gauge");
     let _ = writeln!(
         out,
-        "# HELP madcap_rider_overall_rank Overall rank (1 = leader)"
+        "# HELP dotwatcher_rider_overall_rank Overall rank (1 = leader)"
     );
-    let _ = writeln!(out, "# TYPE madcap_rider_overall_rank gauge");
+    let _ = writeln!(out, "# TYPE dotwatcher_rider_overall_rank gauge");
     let _ = writeln!(
         out,
-        "# HELP madcap_rider_category_rank Rank within the rider's category"
+        "# HELP dotwatcher_rider_category_rank Rank within the rider's category"
     );
-    let _ = writeln!(out, "# TYPE madcap_rider_category_rank gauge");
+    let _ = writeln!(out, "# TYPE dotwatcher_rider_category_rank gauge");
     let _ = writeln!(
         out,
-        "# HELP madcap_rider_battery_pct Tracker battery percentage"
+        "# HELP dotwatcher_rider_battery_pct Tracker battery percentage"
     );
-    let _ = writeln!(out, "# TYPE madcap_rider_battery_pct gauge");
+    let _ = writeln!(out, "# TYPE dotwatcher_rider_battery_pct gauge");
     let _ = writeln!(
         out,
-        "# HELP madcap_rider_sleeping 1 if the rider is currently flagged sleeping, else 0"
+        "# HELP dotwatcher_rider_sleeping 1 if the rider is currently flagged sleeping, else 0"
     );
-    let _ = writeln!(out, "# TYPE madcap_rider_sleeping gauge");
+    let _ = writeln!(out, "# TYPE dotwatcher_rider_sleeping gauge");
     let _ = writeln!(
         out,
-        "# HELP madcap_rider_distance_to_next_cp_km Straight-line distance to the next checkpoint"
+        "# HELP dotwatcher_rider_distance_to_next_cp_km Straight-line distance to the next checkpoint"
     );
-    let _ = writeln!(out, "# TYPE madcap_rider_distance_to_next_cp_km gauge");
+    let _ = writeln!(out, "# TYPE dotwatcher_rider_distance_to_next_cp_km gauge");
     let _ = writeln!(
         out,
-        "# HELP madcap_event_cactus_km Virtual pacer position — fraction of elapsed event time × total_km"
+        "# HELP dotwatcher_event_cactus_km Virtual pacer position — fraction of elapsed event time × total_km"
     );
-    let _ = writeln!(out, "# TYPE madcap_event_cactus_km gauge");
+    let _ = writeln!(out, "# TYPE dotwatcher_event_cactus_km gauge");
     let _ = writeln!(
         out,
-        "# HELP madcap_rider_cactus_delta_km Rider distance minus cactus km (positive = ahead of the pacer)"
+        "# HELP dotwatcher_rider_cactus_delta_km Rider distance minus cactus km (positive = ahead of the pacer)"
     );
-    let _ = writeln!(out, "# TYPE madcap_rider_cactus_delta_km gauge");
+    let _ = writeln!(out, "# TYPE dotwatcher_rider_cactus_delta_km gauge");
 
     for (_slug, cache) in &caches {
         if let Some(text) = cache.race_metrics.read().await.as_ref() {
@@ -1409,7 +1409,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "madcap_fast=info,tower_http=info".into()),
+                .unwrap_or_else(|_| "dotwatcher=info,tower_http=info".into()),
         )
         .init();
 
@@ -1417,10 +1417,10 @@ async fn main() -> Result<()> {
         .pool_idle_timeout(Duration::from_secs(60))
         .pool_max_idle_per_host(8)
         .timeout(Duration::from_secs(45))
-        .user_agent("madcap-fast/0.1")
+        .user_agent("dotwatcher/0.1")
         .build()?;
 
-    let cache_dir = std::env::var("MADCAP_CACHE_DIR")
+    let cache_dir = std::env::var("DOTWATCHER_CACHE_DIR")
         .ok()
         .filter(|s| !s.is_empty())
         .map(PathBuf::from);
@@ -1453,7 +1453,7 @@ async fn main() -> Result<()> {
     // Comma-separated list of slugs to pre-warm on boot. Each becomes its own
     // background refresher; duplicates in the cache dir are a no-op.
     let warm_slugs =
-        std::env::var("MADCAP_WARM_SLUG").unwrap_or_else(|_| "desertus-bikus-26".into());
+        std::env::var("DOTWATCHER_WARM_SLUG").unwrap_or_else(|_| "desertus-bikus-26".into());
     for raw in warm_slugs.split(',') {
         let slug = raw.trim();
         if slug.is_empty() || !slug_ok(slug) {
@@ -1486,7 +1486,7 @@ async fn main() -> Result<()> {
         .unwrap_or(9004);
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    info!(%addr, "madcap_fast listening");
+    info!(%addr, "dotwatcher listening");
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown())
         .await?;

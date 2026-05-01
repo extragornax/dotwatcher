@@ -3,13 +3,13 @@ global:
   scrape_timeout: 10s
 
 scrape_configs:
-  - job_name: madcap_fast
+  - job_name: dotwatcher
     metrics_path: /metrics
     static_configs:
-      # Same compose network as madcap_fast → reach it by service name.
-      - targets: ["madcap_fast:9004"]
+      # Same compose network as dotwatcher → reach it by service name.
+      - targets: ["dotwatcher:9004"]
         labels:
-          instance: madcap_fast
+          instance: dotwatcher
 
   - job_name: prometheus
     static_configs:

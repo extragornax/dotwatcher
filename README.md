@@ -1,4 +1,4 @@
-# madcap_fast
+# dotwatcher
 
 A fast, self-hosted viewer for public [madcap.cc](https://app.madcap.cc) event pages
 (live bike-race tracking). Drop-in replacement for one event page that loads in
@@ -22,7 +22,7 @@ visitor pays that cost.
 
 End-to-end measurement with Playwright against a warm upstream:
 
-| metric                       | `app.madcap.cc` (original) | `madcap_fast` (this project) |
+| metric                       | `app.madcap.cc` (original) | `dotwatcher` (this project) |
 | ---------------------------- | -------------------------: | ---------------------------: |
 | data usable                  |                 18 s       |                **110 ms**    |
 | participants rendered        |                 31 s       |                **0.7 s**     |
@@ -88,7 +88,7 @@ Nothing exotic.
   pre-compressed buffer.
 - **Introspection headers.** `x-upstream-ms`, `x-cache-age-ms`, `x-cache-stale`
   so the frontend can display live cache freshness.
-- **Optional disk persistence.** When `MADCAP_CACHE_DIR` is set, every refresh
+- **Optional disk persistence.** When `DOTWATCHER_CACHE_DIR` is set, every refresh
   atomically writes the raw combined JSON to
   `<dir>/events/<slug>.json` (and the events list to
   `<dir>/events_list.json`). On startup the server walks the directory and
@@ -249,34 +249,34 @@ rebuilds only recompile `src/`.
 ### Prometheus + Grafana (optional)
 
 `/metrics` is always on. **Prometheus ships with the main compose stack**
-so metrics collection starts automatically whenever `madcap_fast` is up —
+so metrics collection starts automatically whenever `dotwatcher` is up —
 you always have 90 days of operational history even without Grafana.
 **Grafana lives in a separate compose** so you can bring it up only when
 you actually want a dashboard, without disturbing metric collection.
 
 ```bash
-docker compose up -d                                   # madcap_fast + prometheus
+docker compose up -d                                   # dotwatcher + prometheus
 docker compose -f docker-compose.monitoring.yml up -d  # + grafana
 # Grafana    http://127.0.0.1:9007   (admin / admin — change it)
 # Prometheus http://127.0.0.1:9090
 ```
 
 Files:
-- `docker-compose.yml` — runs **Prometheus** alongside `madcap_fast` on a
-  shared `madcap_fast_monitoring` Docker network so Prometheus scrapes
-  `madcap_fast:9004` by service name. Named volume `prometheus-data`,
+- `docker-compose.yml` — runs **Prometheus** alongside `dotwatcher` on a
+  shared `dotwatcher_monitoring` Docker network so Prometheus scrapes
+  `dotwatcher:9004` by service name. Named volume `prometheus-data`,
   90-day retention. Prometheus's `:9090` is bound to `127.0.0.1` only —
   **not reachable from the public IP**; drop the `ports:` block entirely
   to make it container-only.
 - `docker-compose.monitoring.yml` — Grafana only; joins the same
-  `madcap_fast_monitoring` network (as `external`) and reaches Prometheus
+  `dotwatcher_monitoring` network (as `external`) and reaches Prometheus
   by service name (`http://prometheus:9090`). Named volume `grafana-data`
   for its own state.
-- `monitoring/prometheus.yml` — scrape config targeting `madcap_fast:9004`.
+- `monitoring/prometheus.yml` — scrape config targeting `dotwatcher:9004`.
 - `monitoring/grafana/provisioning/datasources/prometheus.yml` — auto-wires
   Prometheus as Grafana's default data source on first boot (UID
   `prometheus`).
-- `monitoring/grafana/provisioning/dashboards/dashboards.yml` + `monitoring/grafana/dashboards/madcap_fast-race.json` — auto-loaded multi-race dashboard. An **Event** dropdown lists every cached & live slug via `label_values(madcap_event_total_km, slug)`, plus a **Top N riders** slider. Panels: 6 stat cards (participants / active / started / sleeping / finished / course total), rank-over-time worms, distance-over-time, current leaderboard table (rank + bib + name + distance + speed + battery with color-gradient), low-battery watchlist, and the operational refresh-latency + cache-age trends. Folder in Grafana: **madcap_fast**.
+- `monitoring/grafana/provisioning/dashboards/dashboards.yml` + `monitoring/grafana/dashboards/dotwatcher-race.json` — auto-loaded multi-race dashboard. An **Event** dropdown lists every cached & live slug via `label_values(dotwatcher_event_total_km, slug)`, plus a **Top N riders** slider. Panels: 6 stat cards (participants / active / started / sleeping / finished / course total), rank-over-time worms, distance-over-time, current leaderboard table (rank + bib + name + distance + speed + battery with color-gradient), low-battery watchlist, and the operational refresh-latency + cache-age trends. Folder in Grafana: **dotwatcher**.
 
 Env overrides: `PROMETHEUS_PORT`, `GRAFANA_PORT`, `GRAFANA_USER`,
 `GRAFANA_PASSWORD`, `GF_SERVER_ROOT_URL`, `GF_SERVER_DOMAIN`.
@@ -298,7 +298,7 @@ GRAFANA_USER=admin GRAFANA_PASSWORD=admin \
 ```
 
 The script upserts a cloned dashboard per slug (uid
-`madcap-race-<slug>`, `slug` variable pinned and hidden), enables its
+`dotwatcher-race-<slug>`, `slug` variable pinned and hidden), enables its
 public dashboard, and prints the URLs. Idempotent — re-run whenever a
 new race enters the warm set. Requires `curl` and `jq`.
 
@@ -330,43 +330,43 @@ keep `GF_SERVER_ROOT_URL=http://grafana.extragornax.fr/`.
 Once Grafana is up, build panels from queries like:
 
 **Operational**
-- **Cache age per slug** — `madcap_fast_cache_age_seconds`
-- **Upstream latency trend** — `madcap_fast_upstream_last_ms`
-- **304 rate** — `rate(madcap_fast_responses_not_modified_total[5m])`
-- **Error rate** — `rate(madcap_fast_upstream_errors_total[5m])`
-- **Cache body size** — `madcap_fast_cache_body_bytes / 1024 / 1024` (MB)
+- **Cache age per slug** — `dotwatcher_cache_age_seconds`
+- **Upstream latency trend** — `dotwatcher_upstream_last_ms`
+- **304 rate** — `rate(dotwatcher_responses_not_modified_total[5m])`
+- **Error rate** — `rate(dotwatcher_upstream_errors_total[5m])`
+- **Cache body size** — `dotwatcher_cache_body_bytes / 1024 / 1024` (MB)
 
 **Race data** (per-rider gauges, refreshed every 30 s)
 Each cached event contributes a block labelled
 `{slug,bib,name,category}`:
 
-- `madcap_rider_distance_km`
-- `madcap_rider_speed_kmh`
-- `madcap_rider_overall_rank`  /  `madcap_rider_category_rank`
-- `madcap_rider_battery_pct`
-- `madcap_rider_sleeping` (0 / 1)
-- `madcap_rider_distance_to_next_cp_km`
-- `madcap_rider_cactus_delta_km` — rider's km ahead of (positive) or behind (negative) the virtual pacer
+- `dotwatcher_rider_distance_km`
+- `dotwatcher_rider_speed_kmh`
+- `dotwatcher_rider_overall_rank`  /  `dotwatcher_rider_category_rank`
+- `dotwatcher_rider_battery_pct`
+- `dotwatcher_rider_sleeping` (0 / 1)
+- `dotwatcher_rider_distance_to_next_cp_km`
+- `dotwatcher_rider_cactus_delta_km` — rider's km ahead of (positive) or behind (negative) the virtual pacer
 
 Plus event-level gauges labelled `{slug}`:
-`madcap_event_total_km`, `madcap_event_cactus_km`,
-`madcap_event_participants`, `madcap_event_active`,
-`madcap_event_sleeping`, `madcap_event_started`,
-`madcap_event_finished`.
+`dotwatcher_event_total_km`, `dotwatcher_event_cactus_km`,
+`dotwatcher_event_participants`, `dotwatcher_event_active`,
+`dotwatcher_event_sleeping`, `dotwatcher_event_started`,
+`dotwatcher_event_finished`.
 
 Example Grafana queries:
 
-- **Rank-over-time worms** — `madcap_rider_overall_rank{slug="desertus-bikus-26"}` with legend `{{name}}`
+- **Rank-over-time worms** — `dotwatcher_rider_overall_rank{slug="desertus-bikus-26"}` with legend `{{name}}`
 - **Cactus delta per rider** (use your own start/end dates) —
-  `madcap_rider_distance_km - on(slug) group_left() madcap_event_total_km * ((time() - $start_ts) / ($end_ts - $start_ts))`
+  `dotwatcher_rider_distance_km - on(slug) group_left() dotwatcher_event_total_km * ((time() - $start_ts) / ($end_ts - $start_ts))`
 - **Field speed histogram** —
-  `histogram_quantile(0.5, sum by (le) (rate(madcap_rider_speed_kmh_bucket[5m])))`
-  (not a histogram out of the box — use `quantile_over_time(0.5, madcap_rider_speed_kmh[15m])` for a quick median)
-- **Finishers counter** — `madcap_event_finished{slug="desertus-bikus-26"}`
-- **Low batteries** — `madcap_rider_battery_pct < 20`
-- **Who's ahead of the pacer right now** — `madcap_rider_cactus_delta_km > 0`
-- **Pacer position over time** — `madcap_event_cactus_km{slug="..."}`
-- **Cactus delta histogram** — `histogram_quantile(0.5, sum by (le) (madcap_rider_cactus_delta_km))` (or `quantile_over_time` for a quick median)
+  `histogram_quantile(0.5, sum by (le) (rate(dotwatcher_rider_speed_kmh_bucket[5m])))`
+  (not a histogram out of the box — use `quantile_over_time(0.5, dotwatcher_rider_speed_kmh[15m])` for a quick median)
+- **Finishers counter** — `dotwatcher_event_finished{slug="desertus-bikus-26"}`
+- **Low batteries** — `dotwatcher_rider_battery_pct < 20`
+- **Who's ahead of the pacer right now** — `dotwatcher_rider_cactus_delta_km > 0`
+- **Pacer position over time** — `dotwatcher_event_cactus_km{slug="..."}`
+- **Cactus delta histogram** — `histogram_quantile(0.5, sum by (le) (dotwatcher_rider_cactus_delta_km))` (or `quantile_over_time` for a quick median)
 
 Cardinality on desertus-bikus-26: ~376 riders × 7 metrics ≈ 2 500 active
 series per event. Multi-event Prometheus handles tens of thousands
@@ -381,7 +381,7 @@ until it reports `healthy`.
 
 Required GitHub **secrets**: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`
 (and optionally `DEPLOY_PORT`). Optional repo **variable**: `DEPLOY_PATH`
-(defaults to `/srv/madcap_fast`). Full setup notes are in the comment header
+(defaults to `/srv/dotwatcher`). Full setup notes are in the comment header
 of the workflow file.
 
 ### Config (env vars, both modes)
@@ -390,8 +390,8 @@ of the workflow file.
 | ------------------ | --------------------- | -------------------------------------------- |
 | `PORT`             | `9004`                | bind port                                    |
 | `MADCAP_WARM_SLUG` | `desertus-bikus-26`   | slug to pre-warm on boot; set empty to skip  |
-| `MADCAP_CACHE_DIR` | *(unset)*             | directory to persist snapshots to; unset = in-memory only. Compose sets this to `/var/cache/madcap_fast` and mounts a named volume there. |
-| `RUST_LOG`         | `madcap_fast=info`    | standard `tracing_subscriber` filter         |
+| `DOTWATCHER_CACHE_DIR` | *(unset)*             | directory to persist snapshots to; unset = in-memory only. Compose sets this to `/var/cache/dotwatcher` and mounts a named volume there. |
+| `RUST_LOG`         | `dotwatcher=info`    | standard `tracing_subscriber` filter         |
 | `HOST_PORT`        | `9004`                | compose only: host-side port mapping         |
 
 The server exposes:

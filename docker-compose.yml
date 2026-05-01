@@ -1,20 +1,20 @@
 services:
-  madcap_fast:
+  dotwatcher:
     build:
       context: .
       dockerfile: Dockerfile
-    image: madcap_fast:latest
-    container_name: madcap_fast
+    image: dotwatcher:latest
+    container_name: dotwatcher
     restart: unless-stopped
     ports:
       - "${HOST_PORT:-9004}:9004"
     environment:
       PORT: "9004"
       MADCAP_WARM_SLUG: "${MADCAP_WARM_SLUG:-desertus-bikus-26}"
-      MADCAP_CACHE_DIR: "${MADCAP_CACHE_DIR:-/var/cache/madcap_fast}"
-      RUST_LOG: "${RUST_LOG:-madcap_fast=info,tower_http=info}"
+      DOTWATCHER_CACHE_DIR: "${DOTWATCHER_CACHE_DIR:-/var/cache/dotwatcher}"
+      RUST_LOG: "${RUST_LOG:-dotwatcher=info,tower_http=info}"
     volumes:
-      - cache:/var/cache/madcap_fast
+      - cache:/var/cache/dotwatcher
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9004/"]
       interval: 30s
@@ -30,7 +30,7 @@ services:
 
   prometheus:
     image: prom/prometheus:latest
-    container_name: madcap_fast_prometheus
+    container_name: dotwatcher_prometheus
     restart: unless-stopped
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
@@ -46,14 +46,14 @@ services:
     ports:
       - "${PROMETHEUS_PORT:-9090}:9090"
     depends_on:
-      - madcap_fast
+      - dotwatcher
     networks:
       - monitoring
 
 networks:
   default:
   monitoring:
-    name: madcap_fast_monitoring
+    name: dotwatcher_monitoring
 
 volumes:
   cache:

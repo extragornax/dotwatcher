@@ -1,4 +1,4 @@
-# Deploys madcap_fast to a remote server over SSH on every push to master.
+# Deploys dotwatcher to a remote server over SSH on every push to master.
 #
 # Secrets required (Repo → Settings → Secrets and variables → Actions → Secrets):
 #   DEPLOY_HOST    — hostname or IP of the target server (e.g. extragornax.fr)
@@ -10,7 +10,7 @@
 #   DEPLOY_PORT    — SSH port if not 22
 #
 # Optional repo variable (Repo → Settings → Secrets and variables → Actions → Variables):
-#   DEPLOY_PATH    — path to the repo on the server (default: /srv/madcap_fast)
+#   DEPLOY_PATH    — path to the repo on the server (default: /srv/dotwatcher)
 #
 # Prereqs on the server:
 #   - The repo is cloned at DEPLOY_PATH and origin points to this GitHub repo.
@@ -46,7 +46,7 @@ jobs:
           script_stop: true
           script: |
             set -euo pipefail
-            cd "${{ vars.DEPLOY_PATH || '/srv/madcap_fast' }}"
+            cd "${{ vars.DEPLOY_PATH || '/srv/dotwatcher' }}"
             echo "== Pulling latest =="
             git fetch --prune origin
             git checkout master
@@ -55,7 +55,7 @@ jobs:
             docker compose up -d --build
             echo "== Waiting for healthy =="
             for i in $(seq 1 20); do
-              status=$(docker inspect --format='{{.State.Health.Status}}' madcap_fast 2>/dev/null || echo "none")
+              status=$(docker inspect --format='{{.State.Health.Status}}' dotwatcher 2>/dev/null || echo "none")
               echo "health[$i]: $status"
               if [ "$status" = "healthy" ]; then
                 echo "== Deploy OK =="
@@ -64,5 +64,5 @@ jobs:
               sleep 3
             done
             echo "== Container not healthy after 60s ==" >&2
-            docker compose logs --tail=80 madcap_fast || true
+            docker compose logs --tail=80 dotwatcher || true
             exit 1

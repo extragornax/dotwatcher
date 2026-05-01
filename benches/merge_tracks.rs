@@ -1,5 +1,5 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use madcap_fast::merge_track_pages;
+use dotwatcher::merge_track_pages;
 use serde_json::{Value, json};
 
 /// Build `pages` pages of fake tracks with monotonically-increasing timestamps

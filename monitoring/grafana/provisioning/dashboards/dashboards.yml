@@ -1,9 +1,9 @@
 apiVersion: 1
 
 providers:
-  - name: madcap_fast
+  - name: dotwatcher
     orgId: 1
-    folder: madcap_fast
+    folder: dotwatcher
     type: file
     # With a read-only bind-mount, Grafana must not try to delete files
     # or write edits back to disk.

@@ -13,7 +13,7 @@ RUN mkdir -p src benches && \
     : > src/lib.rs && \
     echo 'fn main() {}' > benches/merge_tracks.rs && \
     cargo build --release && \
-    rm -rf src target/release/madcap_fast target/release/deps/madcap_fast*
+    rm -rf src target/release/dotwatcher target/release/deps/dotwatcher*
 
 COPY src ./src
 # Bust cargo's mtime-based cache so sources are recompiled.
@@ -25,13 +25,13 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates curl tini && \
     rm -rf /var/lib/apt/lists/*
 
-RUN useradd --system --no-create-home --uid 10001 madcap
-USER madcap
+RUN useradd --system --no-create-home --uid 10001 dotwatcher
+USER dotwatcher
 
-COPY --from=builder /app/target/release/madcap_fast /usr/local/bin/madcap_fast
+COPY --from=builder /app/target/release/dotwatcher /usr/local/bin/dotwatcher
 
 ENV PORT=9004 \
-    RUST_LOG=madcap_fast=info,tower_http=info \
+    RUST_LOG=dotwatcher=info,tower_http=info \
     MADCAP_WARM_SLUG=desertus-bikus-26
 
 EXPOSE 9004
@@ -39,4 +39,4 @@ EXPOSE 9004
 HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
     CMD curl -fsS "http://127.0.0.1:${PORT}/" >/dev/null || exit 1
 
-ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/madcap_fast"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/dotwatcher"]

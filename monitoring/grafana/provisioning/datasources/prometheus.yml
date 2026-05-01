@@ -6,7 +6,7 @@ datasources:
     type: prometheus
     access: proxy
     # Prometheus runs in the main docker-compose stack. Grafana joins the
-    # shared `madcap_fast_monitoring` network so it reaches Prometheus by
+    # shared `dotwatcher_monitoring` network so it reaches Prometheus by
     # service name (no host bridge, no public IP exposure).
     url: http://prometheus:9090
     isDefault: true

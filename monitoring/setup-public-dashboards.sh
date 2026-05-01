@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Create one Grafana public dashboard per currently-cached race in
-# madcap_fast, each with the `slug` variable pinned so viewers land on a
+# dotwatcher, each with the `slug` variable pinned so viewers land on a
 # single event without needing the dropdown.
 #
 # Workflow:
-#   1. Fetch the base dashboard (uid: madcap-race) from Grafana.
-#   2. List active slugs from the madcap_fast /metrics endpoint.
+#   1. Fetch the base dashboard (uid: dotwatcher-race) from Grafana.
+#   2. List active slugs from the dotwatcher /metrics endpoint.
 #   3. For each slug, POST a cloned dashboard (new uid, title, pinned
 #      slug, hidden variable) to Grafana.
 #   4. Enable its public-dashboard and print the public URL.
@@ -16,27 +16,27 @@
 # Requirements: curl, jq.
 #
 # Env:
-#   MADCAP_FAST_URL   default http://localhost:9004
+#   DOTWATCHER_URL   default http://localhost:9004
 #   GRAFANA_URL       default http://localhost:9007
 #   GRAFANA_USER      default admin
 #   GRAFANA_PASSWORD  default admin
-#   BASE_UID          default madcap-race
+#   BASE_UID          default dotwatcher-race
 #   TOPN              default 20 (bakes `topn` variable default into the
 #                                   cloned dashboard; any positive integer)
 #
 # Example:
-#   MADCAP_FAST_URL=http://madcap.extragornax.fr \
+#   DOTWATCHER_URL=http://madcap.extragornax.fr \
 #   GRAFANA_URL=http://grafana.extragornax.fr \
 #   GRAFANA_USER=admin GRAFANA_PASSWORD=secret \
 #   ./monitoring/setup-public-dashboards.sh
 
 set -euo pipefail
 
-MADCAP_FAST_URL="${MADCAP_FAST_URL:-http://localhost:9004}"
+DOTWATCHER_URL="${DOTWATCHER_URL:-http://localhost:9004}"
 GRAFANA_URL="${GRAFANA_URL:-http://localhost:9007}"
 GRAFANA_USER="${GRAFANA_USER:-admin}"
 GRAFANA_PASSWORD="${GRAFANA_PASSWORD:-admin}"
-BASE_UID="${BASE_UID:-madcap-race}"
+BASE_UID="${BASE_UID:-dotwatcher-race}"
 TOPN="${TOPN:-20}"
 
 if ! [[ "$TOPN" =~ ^[0-9]+$ ]] || [[ "$TOPN" -lt 1 ]]; then
@@ -64,14 +64,14 @@ if [[ -z "$base_dash" || "$base_dash" == "null" ]]; then
   exit 1
 fi
 
-echo ">> slugs from $MADCAP_FAST_URL/metrics"
-slugs=$(curl -sS "$MADCAP_FAST_URL/metrics" \
-        | grep -oE 'madcap_event_total_km\{slug="[^"]+' \
+echo ">> slugs from $DOTWATCHER_URL/metrics"
+slugs=$(curl -sS "$DOTWATCHER_URL/metrics" \
+        | grep -oE 'dotwatcher_event_total_km\{slug="[^"]+' \
         | sed -E 's/.*slug="//' \
         | sort -u)
 
 if [[ -z "$slugs" ]]; then
-  echo "no active events found (only live events emit madcap_event_total_km)" >&2
+  echo "no active events found (only live events emit dotwatcher_event_total_km)" >&2
   exit 1
 fi
 
@@ -80,8 +80,8 @@ printf '%s\n' '--------------------------------------------------------------'
 
 while IFS= read -r slug; do
   [[ -z "$slug" ]] && continue
-  new_uid="madcap-race-${slug}"
-  new_title="madcap_fast — ${slug}"
+  new_uid="dotwatcher-race-${slug}"
+  new_title="dotwatcher — ${slug}"
 
   clone=$(echo "$base_dash" | jq \
     --arg uid "$new_uid" \

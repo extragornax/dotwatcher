@@ -26,7 +26,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "madcap_event_participants{slug=\"$slug\"}",
+          "expr": "dotwatcher_event_participants{slug=\"$slug\"}",
           "refId": "A",
           "instant": true
         }
@@ -56,7 +56,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "madcap_event_active{slug=\"$slug\"}",
+          "expr": "dotwatcher_event_active{slug=\"$slug\"}",
           "refId": "A",
           "instant": true
         }
@@ -86,7 +86,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "madcap_event_started{slug=\"$slug\"}",
+          "expr": "dotwatcher_event_started{slug=\"$slug\"}",
           "refId": "A",
           "instant": true
         }
@@ -115,7 +115,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "madcap_event_sleeping{slug=\"$slug\"}",
+          "expr": "dotwatcher_event_sleeping{slug=\"$slug\"}",
           "refId": "A",
           "instant": true
         }
@@ -144,7 +144,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "madcap_event_finished{slug=\"$slug\"}",
+          "expr": "dotwatcher_event_finished{slug=\"$slug\"}",
           "refId": "A",
           "instant": true
         }
@@ -173,7 +173,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "madcap_event_total_km{slug=\"$slug\"}",
+          "expr": "dotwatcher_event_total_km{slug=\"$slug\"}",
           "refId": "A",
           "instant": true
         }
@@ -204,7 +204,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "bottomk($topn, madcap_rider_overall_rank{slug=\"$slug\"})",
+          "expr": "bottomk($topn, dotwatcher_rider_overall_rank{slug=\"$slug\"})",
           "legendFormat": "#{{bib}} {{name}}",
           "refId": "A"
         }
@@ -233,7 +233,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "topk($topn, madcap_rider_distance_km{slug=\"$slug\"})",
+          "expr": "topk($topn, dotwatcher_rider_distance_km{slug=\"$slug\"})",
           "legendFormat": "#{{bib}} {{name}}",
           "refId": "A"
         }
@@ -263,25 +263,25 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "madcap_rider_overall_rank{slug=\"$slug\"}",
+          "expr": "dotwatcher_rider_overall_rank{slug=\"$slug\"}",
           "refId": "Rank",
           "instant": true,
           "format": "table"
         },
         {
-          "expr": "madcap_rider_distance_km{slug=\"$slug\"}",
+          "expr": "dotwatcher_rider_distance_km{slug=\"$slug\"}",
           "refId": "Distance",
           "instant": true,
           "format": "table"
         },
         {
-          "expr": "madcap_rider_speed_kmh{slug=\"$slug\"}",
+          "expr": "dotwatcher_rider_speed_kmh{slug=\"$slug\"}",
           "refId": "Speed",
           "instant": true,
           "format": "table"
         },
         {
-          "expr": "madcap_rider_battery_pct{slug=\"$slug\"}",
+          "expr": "dotwatcher_rider_battery_pct{slug=\"$slug\"}",
           "refId": "Battery",
           "instant": true,
           "format": "table"
@@ -366,7 +366,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "madcap_rider_battery_pct{slug=\"$slug\"} < 30",
+          "expr": "dotwatcher_rider_battery_pct{slug=\"$slug\"} < 30",
           "refId": "A",
           "instant": true,
           "format": "table"
@@ -432,7 +432,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "madcap_fast_upstream_last_ms{slug=\"$slug\"}",
+          "expr": "dotwatcher_upstream_last_ms{slug=\"$slug\"}",
           "legendFormat": "{{slug}}",
           "refId": "A"
         }
@@ -451,12 +451,12 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "madcap_fast_cache_age_seconds{slug=\"$slug\"}",
+          "expr": "dotwatcher_cache_age_seconds{slug=\"$slug\"}",
           "legendFormat": "age (s)",
           "refId": "A"
         },
         {
-          "expr": "madcap_fast_cache_body_bytes{slug=\"$slug\"} / 1024 / 1024",
+          "expr": "dotwatcher_cache_body_bytes{slug=\"$slug\"} / 1024 / 1024",
           "legendFormat": "body (MB)",
           "refId": "B"
         }
@@ -481,20 +481,20 @@
   "refresh": "30s",
   "schemaVersion": 39,
   "style": "dark",
-  "tags": ["madcap_fast", "race"],
+  "tags": ["dotwatcher", "race"],
   "templating": {
     "list": [
       {
         "current": { "selected": false, "text": "desertus-bikus-26", "value": "desertus-bikus-26" },
         "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "definition": "label_values(madcap_event_total_km, slug)",
+        "definition": "label_values(dotwatcher_event_total_km, slug)",
         "hide": 0,
         "includeAll": false,
         "label": "Event",
         "multi": false,
         "name": "slug",
         "options": [],
-        "query": { "query": "label_values(madcap_event_total_km, slug)", "refId": "PrometheusVariableQueryEditor-VariableQuery" },
+        "query": { "query": "label_values(dotwatcher_event_total_km, slug)", "refId": "PrometheusVariableQueryEditor-VariableQuery" },
         "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
@@ -525,8 +525,8 @@
   "time": { "from": "now-12h", "to": "now" },
   "timepicker": {},
   "timezone": "",
-  "title": "madcap_fast — race",
-  "uid": "madcap-race",
+  "title": "dotwatcher — race",
+  "uid": "dotwatcher-race",
   "version": 1,
   "weekStart": ""
 }

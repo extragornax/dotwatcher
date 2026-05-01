@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>madcap_fast</title>
+<title>dotwatcher</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
       integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
@@ -270,7 +270,7 @@
 <body>
 <header>
   <a class="event-back" id="home-link" href="/" style="display:none">← All events</a>
-  <h1>madcap<span style="color: var(--accent)">_fast</span></h1>
+  <h1>dot<span style="color: var(--accent)">watcher</span></h1>
   <div class="sub">
     <span id="header-context">loading…</span> ·
     <span id="perf">—</span> ·
@@ -411,7 +411,7 @@
   let eventsList = null;
   let homeFilter = 'live';
 
-  const favKey = slug ? `madcap_fav:${slug}` : null;
+  const favKey = slug ? `dotwatcher_fav:${slug}` : null;
   let favs = loadFavs();
   let favOnly = false;
   let catFilter = null;
@@ -453,28 +453,28 @@
       opts: { maxZoom: 17, subdomains: 'abc', attribution: 'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>, SRTM | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA)' },
     },
   };
-  const THEME_KEY = 'madcap_map_theme';
+  const THEME_KEY = 'dotwatcher_map_theme';
   let mapTheme = localStorage.getItem(THEME_KEY) || 'dark';
   if (!(mapTheme in MAP_THEMES)) mapTheme = 'dark';
 
-  const TRACES_KEY = 'madcap_map_traces';
+  const TRACES_KEY = 'dotwatcher_map_traces';
   let showTraces = localStorage.getItem(TRACES_KEY) !== '0';
 
-  const ELEV_KEY = 'madcap_map_elev';
+  const ELEV_KEY = 'dotwatcher_map_elev';
   let showElev = localStorage.getItem(ELEV_KEY) !== '0';
 
-  const JOURNALS_KEY = 'madcap_map_journals';
+  const JOURNALS_KEY = 'dotwatcher_map_journals';
   let showJournalPins = localStorage.getItem(JOURNALS_KEY) === '1';
 
-  const FOLLOW_KEY = 'madcap_map_follow';
+  const FOLLOW_KEY = 'dotwatcher_map_follow';
   let followSelected = localStorage.getItem(FOLLOW_KEY) === '1';
 
-  const NIGHT_KEY = 'madcap_map_night';
+  const NIGHT_KEY = 'dotwatcher_map_night';
   let showNight = localStorage.getItem(NIGHT_KEY) === '1';
 
-  const WIND_KEY = 'madcap_map_wind';
+  const WIND_KEY = 'dotwatcher_map_wind';
   let showWind = localStorage.getItem(WIND_KEY) === '1';
-  const WIND_DENSITY_KEY = 'madcap_map_wind_density';
+  const WIND_DENSITY_KEY = 'dotwatcher_map_wind_density';
   let windDensity = parseInt(localStorage.getItem(WIND_DENSITY_KEY) || '10', 10);
   if (!(windDensity >= 10 && windDensity <= 100)) windDensity = 10;
   let windFetchedAt = 0;
@@ -482,12 +482,12 @@
   let velocityLayer = null;
   let courseProfileCache = { tracks: null, profile: null, totalKm: 0 };
 
-  const LABELS_KEY = 'madcap_map_labels';
+  const LABELS_KEY = 'dotwatcher_map_labels';
   const VALID_LABELS = new Set(['dot', 'bib', 'name']);
   let labelStyle = localStorage.getItem(LABELS_KEY);
   if (!VALID_LABELS.has(labelStyle)) labelStyle = 'dot';
 
-  const NOTIF_ENABLED_KEY = 'madcap_notif_enabled';
+  const NOTIF_ENABLED_KEY = 'dotwatcher_notif_enabled';
   const notifSupported = typeof window !== 'undefined' && 'Notification' in window;
   let notifEnabled = notifSupported
     && Notification.permission === 'granted'
@@ -616,7 +616,7 @@
             const isFinish = cp && cp.cp_type === 'FINISH';
             fireNotif(`${name} ${isFinish ? 'finished at' : 'reached'} ${cpName}`, {
               body: `rank #${cur.cp_rank[i][0]}${cur.distance != null ? ` · ${cur.distance.toFixed(0)} km` : ''}`,
-              tag: `madcap-cp-${slug}-${id}-${i}`,
+              tag: `dotwatcher-cp-${slug}-${id}-${i}`,
             });
           }
         }
@@ -629,12 +629,12 @@
         if (prevDelta > 0 && curDelta <= 0) {
           fireNotif(`🌵 cactus caught ${name}`, {
             body: `now ${Math.abs(curDelta).toFixed(1)} km behind the pacer`,
-            tag: `madcap-cactus-catch-${slug}-${id}`,
+            tag: `dotwatcher-cactus-catch-${slug}-${id}`,
           });
         } else if (prevDelta <= 0 && curDelta > 0) {
           fireNotif(`${name} passed the 🌵`, {
             body: `now ${curDelta.toFixed(1)} km ahead of the pacer`,
-            tag: `madcap-cactus-pass-${slug}-${id}`,
+            tag: `dotwatcher-cactus-pass-${slug}-${id}`,
           });
         }
       }
@@ -645,7 +645,7 @@
         if (gained >= 10) {
           fireNotif(`${name} gained ${gained} places`, {
             body: `now #${cur.overall_rank} (was #${prev.overall_rank})`,
-            tag: `madcap-rank-${slug}-${id}`,
+            tag: `dotwatcher-rank-${slug}-${id}`,
           });
         }
       }
@@ -655,7 +655,7 @@
           && cur.battery <= 20 && prev.battery > 20) {
         fireNotif(`${name}: battery low`, {
           body: `${cur.battery}%`,
-          tag: `madcap-batt-${slug}-${id}`,
+          tag: `dotwatcher-batt-${slug}-${id}`,
         });
       }
 
@@ -674,7 +674,7 @@
             if (prevLongStopKey.get(id) !== key) {
               fireNotif(`${name} stopped for ${fmtDur(dur)}`, {
                 body: 'still paused',
-                tag: `madcap-stop-${slug}-${id}`,
+                tag: `dotwatcher-stop-${slug}-${id}`,
               });
               prevLongStopKey.set(id, key);
             }
@@ -697,7 +697,7 @@
       fireNotif(`${rn} posted a photo`, {
         body: sinceText(e.timestamp),
         icon: url,
-        tag: `madcap-pic-${slug}-${e.participant_id}-${e.timestamp}`,
+        tag: `dotwatcher-pic-${slug}-${e.participant_id}-${e.timestamp}`,
       });
     }
 
@@ -1345,11 +1345,11 @@
   }
 
   function wireWindZoomListener() {
-    if (!map || map._madcap_wind_zoom_wired) return;
+    if (!map || map._dotwatcher_wind_zoom_wired) return;
     map.on('zoomend', () => {
       if (showWind && velocityLayer) renderWindOverlay();
     });
-    map._madcap_wind_zoom_wired = true;
+    map._dotwatcher_wind_zoom_wired = true;
   }
 
   function routeBounds() {
@@ -1726,7 +1726,7 @@
     const coords = extractGeoJsonCoords(route.geojson);
     if (!coords.length) return;
     const name = route.name || 'route';
-    let gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="madcap_fast" xmlns="http://www.topografix.com/GPX/1/1">\n<metadata><name>${gpxEsc(name)}</name></metadata>\n`;
+    let gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="dotwatcher" xmlns="http://www.topografix.com/GPX/1/1">\n<metadata><name>${gpxEsc(name)}</name></metadata>\n`;
     gpx += `<trk><name>${gpxEsc(name)}</name><trkseg>\n`;
     for (const c of coords) {
       gpx += `<trkpt lat="${c[1]}" lon="${c[0]}"`;
@@ -1759,7 +1759,7 @@
     }
     if (!items.length) return;
     const eventName = (state.info && state.info.name) || 'event';
-    let gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="madcap_fast" xmlns="http://www.topografix.com/GPX/1/1">\n<metadata><name>${gpxEsc(eventName)}</name></metadata>\n`;
+    let gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="dotwatcher" xmlns="http://www.topografix.com/GPX/1/1">\n<metadata><name>${gpxEsc(eventName)}</name></metadata>\n`;
     for (const item of items) {
       gpx += `<trk><name>${gpxEsc(item.name)}</name><trkseg>\n`;
       for (const pt of item.track) {
@@ -2076,7 +2076,7 @@
 
   function renderHeader() {
     const info = state.info;
-    document.title = `${info.name} — madcap_fast`;
+    document.title = `${info.name} — dotwatcher`;
   }
 
   function filteredParticipants() {
@@ -3081,7 +3081,7 @@
 
   // --------- boot ---------
   if (mode === 'home') {
-    document.title = 'madcap_fast · events';
+    document.title = 'dotwatcher · events';
     showHomeView();
     document.getElementById('homeq').addEventListener('input', renderHome);
     document.querySelectorAll('.pill').forEach(b => b.addEventListener('click', () => {

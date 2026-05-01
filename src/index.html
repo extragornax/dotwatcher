@@ -206,6 +206,8 @@
   .card .chip.soon { color: var(--accent); border-color: #5a3a2a; }
   .card .chip.past { color: var(--mute); }
   .card .dates { color: var(--mute); font-size: 11px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  header .credit { margin-left: auto; color: var(--mute); font-size: 11px; white-space: nowrap; }
+  header .credit a { color: var(--mute); text-decoration: underline; }
   header .event-back { color: var(--mute); font-size: 12px; text-decoration: none; border: 1px solid var(--border); padding: 4px 10px; border-radius: 6px; }
   header .event-back:hover { color: var(--fg); }
   .profile { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-top: 14px; }
@@ -276,6 +278,7 @@
     <span id="perf">—</span> ·
     <span id="status" class="badge cold">cold</span>
   </div>
+  <span class="credit">data from <a href="https://madcap.cc" target="_blank" rel="noopener">madcap.cc</a> · not affiliated</span>
   <div class="tabs" role="tablist" id="tabs" style="display:none">
     <button id="side-menu-open" class="tab" type="button" title="event info &amp; sponsors">ℹ</button>
     <button id="notif-toggle" class="tab notif" type="button" title="notifications" aria-pressed="false">🔔</button>

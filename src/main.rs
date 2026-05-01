@@ -415,7 +415,11 @@ async fn restore_from_disk(state: &Arc<AppState>) {
                         overtakes: RwLock::new(overtakes),
                         prev_ranks: RwLock::new(seeded_ranks),
                     });
-                    state.events.write().await.insert(slug.clone(), cache.clone());
+                    state
+                        .events
+                        .write()
+                        .await
+                        .insert(slug.clone(), cache.clone());
                     spawn_refresher(
                         state.client.clone(),
                         cache,
@@ -478,15 +482,15 @@ fn spawn_refresher(
                         let mut prev = cache.prev_ranks.write().await;
                         if let Some(prev_map) = prev.as_ref() {
                             for (pid, &cur_rank) in &new_ranks {
-                                if let Some(&prev_rank) = prev_map.get(pid) {
-                                    if cur_rank < prev_rank {
-                                        dq.push_front(OvertakeRecord {
-                                            t: now,
-                                            pid: pid.clone(),
-                                            from: prev_rank,
-                                            to: cur_rank,
-                                        });
-                                    }
+                                if let Some(&prev_rank) = prev_map.get(pid)
+                                    && cur_rank < prev_rank
+                                {
+                                    dq.push_front(OvertakeRecord {
+                                        t: now,
+                                        pid: pid.clone(),
+                                        from: prev_rank,
+                                        to: cur_rank,
+                                    });
                                 }
                             }
                             while dq.len() > OVERTAKES_MAX {
@@ -771,10 +775,9 @@ fn render_event_race_metrics(slug: &str, body: &[u8]) -> Option<String> {
         .get("end_date")
         .and_then(|v| v.as_str())
         .and_then(parse_iso_utc)
+        && now_unix_s() > end_ts
     {
-        if now_unix_s() > end_ts {
-            return None;
-        }
+        return None;
     }
 
     let slug_esc = esc_label(slug);
@@ -809,10 +812,7 @@ fn render_event_race_metrics(slug: &str, body: &[u8]) -> Option<String> {
         _ => None,
     };
     if let Some(ck) = cactus_km {
-        let _ = writeln!(
-            out,
-            "madcap_event_cactus_km{{slug=\"{slug_esc}\"}} {ck}"
-        );
+        let _ = writeln!(out, "madcap_event_cactus_km{{slug=\"{slug_esc}\"}} {ck}");
     }
 
     let racing: Vec<&Value> = participants
@@ -845,10 +845,7 @@ fn render_event_race_metrics(slug: &str, body: &[u8]) -> Option<String> {
             .and_then(|v| v.as_str())
             .unwrap_or("");
         let status = p.get("status").and_then(|v| v.as_str()).unwrap_or("");
-        let sleeping = p
-            .get("sleeping")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let sleeping = p.get("sleeping").and_then(|v| v.as_bool()).unwrap_or(false);
 
         let labels = format!(
             "slug=\"{}\",bib=\"{}\",name=\"{}\",category=\"{}\"",
@@ -875,11 +872,7 @@ fn render_event_race_metrics(slug: &str, body: &[u8]) -> Option<String> {
                 finished += 1;
             }
             if let Some(ck) = cactus_km {
-                let _ = writeln!(
-                    out,
-                    "madcap_rider_cactus_delta_km{{{labels}}} {}",
-                    d - ck
-                );
+                let _ = writeln!(out, "madcap_rider_cactus_delta_km{{{labels}}} {}", d - ck);
             }
         }
         if let Some(sp) = p.get("speed").and_then(|v| v.as_f64()) {
@@ -908,18 +901,12 @@ fn render_event_race_metrics(slug: &str, body: &[u8]) -> Option<String> {
         }
     }
 
-    let _ = writeln!(
-        out,
-        "madcap_event_active{{slug=\"{slug_esc}\"}} {active}"
-    );
+    let _ = writeln!(out, "madcap_event_active{{slug=\"{slug_esc}\"}} {active}");
     let _ = writeln!(
         out,
         "madcap_event_sleeping{{slug=\"{slug_esc}\"}} {sleeping_total}"
     );
-    let _ = writeln!(
-        out,
-        "madcap_event_started{{slug=\"{slug_esc}\"}} {started}"
-    );
+    let _ = writeln!(out, "madcap_event_started{{slug=\"{slug_esc}\"}} {started}");
     let _ = writeln!(
         out,
         "madcap_event_finished{{slug=\"{slug_esc}\"}} {finished}"
@@ -1030,35 +1017,80 @@ async fn metrics_handler(State(state): State<Arc<AppState>>) -> Response {
     }
 
     // Race metrics — emit HELP/TYPE once, then concatenate per-event lines.
-    let _ = writeln!(out, "# HELP madcap_event_total_km Advertised total course distance in km (parsed from info.distance)");
+    let _ = writeln!(
+        out,
+        "# HELP madcap_event_total_km Advertised total course distance in km (parsed from info.distance)"
+    );
     let _ = writeln!(out, "# TYPE madcap_event_total_km gauge");
-    let _ = writeln!(out, "# HELP madcap_event_participants Participant count in the event");
+    let _ = writeln!(
+        out,
+        "# HELP madcap_event_participants Participant count in the event"
+    );
     let _ = writeln!(out, "# TYPE madcap_event_participants gauge");
-    let _ = writeln!(out, "# HELP madcap_event_active Riders with any ping or REGISTERED/ACTIVE status");
+    let _ = writeln!(
+        out,
+        "# HELP madcap_event_active Riders with any ping or REGISTERED/ACTIVE status"
+    );
     let _ = writeln!(out, "# TYPE madcap_event_active gauge");
-    let _ = writeln!(out, "# HELP madcap_event_sleeping Riders currently flagged sleeping");
+    let _ = writeln!(
+        out,
+        "# HELP madcap_event_sleeping Riders currently flagged sleeping"
+    );
     let _ = writeln!(out, "# TYPE madcap_event_sleeping gauge");
-    let _ = writeln!(out, "# HELP madcap_event_started Riders with non-zero distance");
+    let _ = writeln!(
+        out,
+        "# HELP madcap_event_started Riders with non-zero distance"
+    );
     let _ = writeln!(out, "# TYPE madcap_event_started gauge");
-    let _ = writeln!(out, "# HELP madcap_event_finished Riders within 0.5 km of the course total");
+    let _ = writeln!(
+        out,
+        "# HELP madcap_event_finished Riders within 0.5 km of the course total"
+    );
     let _ = writeln!(out, "# TYPE madcap_event_finished gauge");
-    let _ = writeln!(out, "# HELP madcap_rider_distance_km Distance covered by the rider in km");
+    let _ = writeln!(
+        out,
+        "# HELP madcap_rider_distance_km Distance covered by the rider in km"
+    );
     let _ = writeln!(out, "# TYPE madcap_rider_distance_km gauge");
-    let _ = writeln!(out, "# HELP madcap_rider_speed_kmh Current reported speed in km/h");
+    let _ = writeln!(
+        out,
+        "# HELP madcap_rider_speed_kmh Current reported speed in km/h"
+    );
     let _ = writeln!(out, "# TYPE madcap_rider_speed_kmh gauge");
-    let _ = writeln!(out, "# HELP madcap_rider_overall_rank Overall rank (1 = leader)");
+    let _ = writeln!(
+        out,
+        "# HELP madcap_rider_overall_rank Overall rank (1 = leader)"
+    );
     let _ = writeln!(out, "# TYPE madcap_rider_overall_rank gauge");
-    let _ = writeln!(out, "# HELP madcap_rider_category_rank Rank within the rider's category");
+    let _ = writeln!(
+        out,
+        "# HELP madcap_rider_category_rank Rank within the rider's category"
+    );
     let _ = writeln!(out, "# TYPE madcap_rider_category_rank gauge");
-    let _ = writeln!(out, "# HELP madcap_rider_battery_pct Tracker battery percentage");
+    let _ = writeln!(
+        out,
+        "# HELP madcap_rider_battery_pct Tracker battery percentage"
+    );
     let _ = writeln!(out, "# TYPE madcap_rider_battery_pct gauge");
-    let _ = writeln!(out, "# HELP madcap_rider_sleeping 1 if the rider is currently flagged sleeping, else 0");
+    let _ = writeln!(
+        out,
+        "# HELP madcap_rider_sleeping 1 if the rider is currently flagged sleeping, else 0"
+    );
     let _ = writeln!(out, "# TYPE madcap_rider_sleeping gauge");
-    let _ = writeln!(out, "# HELP madcap_rider_distance_to_next_cp_km Straight-line distance to the next checkpoint");
+    let _ = writeln!(
+        out,
+        "# HELP madcap_rider_distance_to_next_cp_km Straight-line distance to the next checkpoint"
+    );
     let _ = writeln!(out, "# TYPE madcap_rider_distance_to_next_cp_km gauge");
-    let _ = writeln!(out, "# HELP madcap_event_cactus_km Virtual pacer position — fraction of elapsed event time × total_km");
+    let _ = writeln!(
+        out,
+        "# HELP madcap_event_cactus_km Virtual pacer position — fraction of elapsed event time × total_km"
+    );
     let _ = writeln!(out, "# TYPE madcap_event_cactus_km gauge");
-    let _ = writeln!(out, "# HELP madcap_rider_cactus_delta_km Rider distance minus cactus km (positive = ahead of the pacer)");
+    let _ = writeln!(
+        out,
+        "# HELP madcap_rider_cactus_delta_km Rider distance minus cactus km (positive = ahead of the pacer)"
+    );
     let _ = writeln!(out, "# TYPE madcap_rider_cactus_delta_km gauge");
 
     for (_slug, cache) in &caches {
@@ -1072,10 +1104,7 @@ async fn metrics_handler(State(state): State<Arc<AppState>>) -> Response {
         header::CONTENT_TYPE,
         HeaderValue::from_static("text/plain; version=0.0.4; charset=utf-8"),
     );
-    h.insert(
-        header::CACHE_CONTROL,
-        HeaderValue::from_static("no-store"),
-    );
+    h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     (StatusCode::OK, h, out).into_response()
 }
 
@@ -1176,10 +1205,7 @@ async fn event_csv_handler(
     );
     h.insert(
         header::CONTENT_DISPOSITION,
-        HeaderValue::from_str(&format!(
-            "attachment; filename=\"{slug}-leaderboard.csv\""
-        ))
-        .unwrap(),
+        HeaderValue::from_str(&format!("attachment; filename=\"{slug}-leaderboard.csv\"")).unwrap(),
     );
     h.insert(
         header::CACHE_CONTROL,
@@ -1232,7 +1258,9 @@ async fn events_csv_handler(State(state): State<Arc<AppState>>) -> Response {
         .cloned()
         .unwrap_or_default();
     let mut csv = String::with_capacity(events.len() * 120);
-    csv.push_str("slug,name,start_place,end_place,start_date,end_date,distance,surface,participants\n");
+    csv.push_str(
+        "slug,name,start_place,end_place,start_date,end_date,distance,surface,participants\n",
+    );
     for e in events {
         let get = |k: &str| e.get(k).cloned().unwrap_or(Value::Null);
         let _ = writeln!(
@@ -1289,10 +1317,14 @@ async fn img_proxy_handler(
 ) -> Response {
     let url = q.url.trim();
     if !url.starts_with("https://storage.googleapis.com/") {
-        return (StatusCode::BAD_REQUEST, "url must be on storage.googleapis.com").into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            "url must be on storage.googleapis.com",
+        )
+            .into_response();
     }
 
-    let w = q.w.unwrap_or(IMG_MAX_WIDTH).min(IMG_MAX_WIDTH).max(16);
+    let w = q.w.unwrap_or(IMG_MAX_WIDTH).clamp(16, IMG_MAX_WIDTH);
 
     if let Some(dir) = &state.cache_dir {
         let path = img_cache_path(dir, url, w);
@@ -1420,8 +1452,8 @@ async fn main() -> Result<()> {
 
     // Comma-separated list of slugs to pre-warm on boot. Each becomes its own
     // background refresher; duplicates in the cache dir are a no-op.
-    let warm_slugs = std::env::var("MADCAP_WARM_SLUG")
-        .unwrap_or_else(|_| "desertus-bikus-26".into());
+    let warm_slugs =
+        std::env::var("MADCAP_WARM_SLUG").unwrap_or_else(|_| "desertus-bikus-26".into());
     for raw in warm_slugs.split(',') {
         let slug = raw.trim();
         if slug.is_empty() || !slug_ok(slug) {

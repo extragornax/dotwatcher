@@ -416,6 +416,11 @@
   let favOnly = false;
   let catFilter = null;
 
+  function imgProxy(url, w) {
+    if (!url || !url.startsWith('https://storage.googleapis.com/')) return url;
+    return '/img?url=' + encodeURIComponent(url) + '&w=' + (w || 800);
+  }
+
   const MAP_THEMES = {
     dark: {
       label: 'Dark',
@@ -1566,7 +1571,7 @@
       const m = L.marker([e.latitude, e.longitude], { icon: divIcon, keyboard: false });
       const url = (e.data && e.data.url) || '';
       const pic = typeLow === 'picture' && url
-        ? `<a href="${escapeAttr(url)}" target="_blank" rel="noopener"><img src="${escapeAttr(url)}" loading="lazy" alt=""/></a>`
+        ? `<a href="${escapeAttr(url)}" target="_blank" rel="noopener"><img src="${escapeAttr(imgProxy(url, 440))}" loading="lazy" alt=""/></a>`
         : '';
       m.bindPopup(`
         <div class="jpopup">
@@ -1860,7 +1865,7 @@
       parts.push('<h3>Sponsors</h3>');
       parts.push('<div class="sponsor-grid">');
       for (const url of sponsors) {
-        parts.push(`<img src="${escapeAttr(url)}" alt="sponsor" loading="lazy" />`);
+        parts.push(`<img src="${escapeAttr(imgProxy(url, 300))}" alt="sponsor" loading="lazy" />`);
       }
       parts.push('</div>');
     }
@@ -1953,7 +1958,7 @@
         const isPic = e.type === 'PICTURE' && url;
         div.className = 'feed-entry' + (isPic ? '' : ' no-thumb');
         const thumb = isPic
-          ? `<a href="${escapeAttr(url)}" target="_blank" rel="noopener"><img class="thumb" src="${escapeAttr(url)}" loading="lazy" alt=""/></a>`
+          ? `<a href="${escapeAttr(url)}" target="_blank" rel="noopener"><img class="thumb" src="${escapeAttr(imgProxy(url, 280))}" loading="lazy" alt=""/></a>`
           : '';
         const rank = p && p.overall_rank != null ? ` · #${p.overall_rank}` : '';
         div.innerHTML = `
@@ -3007,7 +3012,7 @@
       const chipClass = e._class === 'live' ? 'live' : e._class === 'upcoming' ? 'soon' : 'past';
       const chipLabel = e._class === 'live' ? 'LIVE' : e._class === 'upcoming' ? 'UPCOMING' : 'PAST';
       a.innerHTML = `
-        ${e.banner ? `<div class="banner" style="background-image:url('${escapeAttr(e.banner)}')"></div>` : ''}
+        ${e.banner ? `<div class="banner" style="background-image:url('${escapeAttr(imgProxy(e.banner, 800))}')"></div>` : ''}
         <div class="body">
           <div class="title">${escape(e.name || e.slug)}</div>
           ${places ? `<div class="places">${escape(places)}</div>` : ''}

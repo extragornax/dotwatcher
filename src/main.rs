@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, VecDeque},
     fmt::Write as _,
+    io::Cursor,
     net::SocketAddr,
     path::{Path as FsPath, PathBuf},
     sync::Arc,
@@ -1264,6 +1265,100 @@ async fn events_csv_handler(State(state): State<Arc<AppState>>) -> Response {
     (StatusCode::OK, h, csv).into_response()
 }
 
+#[derive(Deserialize)]
+struct ImgQuery {
+    url: String,
+    w: Option<u32>,
+}
+
+const IMG_MAX_WIDTH: u32 = 800;
+const IMG_MAX_BYTES: usize = 15 * 1024 * 1024;
+
+fn img_cache_path(dir: &FsPath, url: &str, w: u32) -> PathBuf {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(url.as_bytes());
+    h.update(w.to_le_bytes());
+    let hex = format!("{:x}", h.finalize());
+    dir.join("img").join(format!("{hex}.webp"))
+}
+
+async fn img_proxy_handler(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Query(q): axum::extract::Query<ImgQuery>,
+) -> Response {
+    let url = q.url.trim();
+    if !url.starts_with("https://storage.googleapis.com/") {
+        return (StatusCode::BAD_REQUEST, "url must be on storage.googleapis.com").into_response();
+    }
+
+    let w = q.w.unwrap_or(IMG_MAX_WIDTH).min(IMG_MAX_WIDTH).max(16);
+
+    if let Some(dir) = &state.cache_dir {
+        let path = img_cache_path(dir, url, w);
+        if let Ok(bytes) = std::fs::read(&path) {
+            let mut h = HeaderMap::new();
+            h.insert(header::CONTENT_TYPE, HeaderValue::from_static("image/webp"));
+            h.insert(
+                header::CACHE_CONTROL,
+                HeaderValue::from_static("public, max-age=86400, immutable"),
+            );
+            return (StatusCode::OK, h, bytes).into_response();
+        }
+    }
+
+    let res = match state.client.get(url).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            warn!(url = %url, error = %e, "img proxy fetch failed");
+            return StatusCode::BAD_GATEWAY.into_response();
+        }
+    };
+    if !res.status().is_success() {
+        return StatusCode::BAD_GATEWAY.into_response();
+    }
+
+    let raw = match res.bytes().await {
+        Ok(b) if b.len() <= IMG_MAX_BYTES => b,
+        Ok(_) => return (StatusCode::BAD_REQUEST, "image too large").into_response(),
+        Err(_) => return StatusCode::BAD_GATEWAY.into_response(),
+    };
+
+    let webp = match tokio::task::spawn_blocking(move || resize_to_webp(&raw, w)).await {
+        Ok(Ok(b)) => b,
+        _ => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+
+    if let Some(dir) = &state.cache_dir {
+        let path = img_cache_path(dir, url, w);
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::write(&path, &webp);
+    }
+
+    let mut h = HeaderMap::new();
+    h.insert(header::CONTENT_TYPE, HeaderValue::from_static("image/webp"));
+    h.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=86400, immutable"),
+    );
+    (StatusCode::OK, h, webp).into_response()
+}
+
+fn resize_to_webp(raw: &[u8], max_w: u32) -> Result<Vec<u8>> {
+    let img = image::load_from_memory(raw).context("decoding image")?;
+    let img = if img.width() > max_w {
+        img.resize(max_w, u32::MAX, image::imageops::FilterType::Lanczos3)
+    } else {
+        img
+    };
+    let mut buf = Cursor::new(Vec::new());
+    img.write_to(&mut buf, image::ImageFormat::WebP)
+        .context("encoding webp")?;
+    Ok(buf.into_inner())
+}
+
 async fn index() -> impl IntoResponse {
     let mut h = HeaderMap::new();
     h.insert(
@@ -1347,6 +1442,7 @@ async fn main() -> Result<()> {
         .route("/api/event/{slug}/overtakes", get(overtakes_handler))
         .route("/api/events", get(events_list_handler))
         .route("/api/events/csv", get(events_csv_handler))
+        .route("/img", get(img_proxy_handler))
         .route("/metrics", get(metrics_handler))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())

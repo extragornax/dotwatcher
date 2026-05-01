@@ -7,6 +7,7 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Entries 
 ## [Unreleased]
 
 ### Added
+- **Image proxy with resize and WebP conversion.** New `/img?url=...&w=...` endpoint fetches images from Google Cloud Storage, resizes them to the requested width (max 800px), converts to WebP, and caches the result on disk. All frontend image rendering (event banners, journal photos, feed thumbnails, sponsor logos) now routes through the proxy with size-appropriate widths (800/440/280/300px), drastically reducing download sizes.
 - **Download GPX button on the map.** A "⬇ GPX" button in the map overlay opens a dropdown listing all available downloads: course routes (from geo routes, e.g. "Cactus") and rider traces (selected rider or all riders). Routes are converted from GeoJSON to GPX; rider traces include elevation and absolute timestamps.
 
 ## cd2f1a6 — Sort past events by end date (newest first)

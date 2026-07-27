@@ -159,6 +159,19 @@ struct Combined<'a> {
     tracks: &'a RawValue,
 }
 
+/// First `max` characters of an upstream error body, for error context.
+///
+/// Slicing by byte index would panic when the cut lands inside a multi-byte
+/// sequence — an accent or emoji in a CDN error page is enough. That panic
+/// happens inside a refresher task, which aborts it and freezes the slug's
+/// snapshot for the life of the process.
+fn truncate_chars(s: &str, max: usize) -> &str {
+    match s.char_indices().nth(max) {
+        Some((idx, _)) => &s[..idx],
+        None => s,
+    }
+}
+
 async fn fetch_raw(
     client: &Client,
     method: reqwest::Method,
@@ -183,7 +196,7 @@ async fn fetch_raw(
     if !status.is_success() {
         anyhow::bail!(
             "upstream {url} returned {status}: {}",
-            &text[..text.len().min(200)]
+            truncate_chars(&text, 200)
         );
     }
     let v: Value =
@@ -1532,8 +1545,11 @@ async fn main() -> Result<()> {
 
     // Comma-separated list of slugs to pre-warm on boot. Each becomes its own
     // background refresher; duplicates in the cache dir are a no-op.
-    let warm_slugs =
-        std::env::var("DOTWATCHER_WARM_SLUG").unwrap_or_else(|_| "desertus-bikus-26".into());
+    // MADCAP_WARM_SLUG is what the Dockerfile, compose file and README all set;
+    // DOTWATCHER_WARM_SLUG stays accepted so existing deployments keep working.
+    let warm_slugs = std::env::var("MADCAP_WARM_SLUG")
+        .or_else(|_| std::env::var("DOTWATCHER_WARM_SLUG"))
+        .unwrap_or_else(|_| "desertus-bikus-26".into());
     for raw in warm_slugs.split(',') {
         let slug = raw.trim();
         if slug.is_empty() || !slug_ok(slug) {
@@ -1576,4 +1592,30 @@ async fn main() -> Result<()> {
 async fn shutdown() {
     let _ = tokio::signal::ctrl_c().await;
     info!("shutting down");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn truncate_chars_handles_multibyte_at_the_cut() {
+        // The regression: `&text[..text.len().min(200)]` panicked whenever byte 200
+        // landed inside a multi-byte sequence, killing the calling refresher for good.
+        // U+2014 is 3 bytes wide, so 200 is not a boundary — this is the shape that
+        // actually crashed. (2- and 4-byte characters happen to divide 200 evenly.)
+        let s = "—".repeat(300);
+        assert!(!s.is_char_boundary(200), "test input must straddle the cut");
+        assert_eq!(truncate_chars(&s, 200).chars().count(), 200);
+
+        let emoji = "🚴".repeat(100);
+        assert_eq!(truncate_chars(&emoji, 200), emoji.as_str());
+    }
+
+    #[test]
+    fn truncate_chars_passes_through_shorter_input() {
+        assert_eq!(truncate_chars("short", 200), "short");
+        assert_eq!(truncate_chars("", 200), "");
+        assert_eq!(truncate_chars("abcdef", 3), "abc");
+    }
 }

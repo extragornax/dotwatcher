@@ -891,6 +891,14 @@ if (location.hostname === 'madcap.extragornax.fr') {
     const parseMs = performance.now() - t1;
     lastEtag = etag;
 
+    // `selected` holds the participant object from whenever the user clicked, and
+    // JSON.parse replaces the whole graph — so without this the detail panel keeps
+    // showing that click's distance, speed, rank, battery and status forever. Fall
+    // back to the old object if the rider vanished from the payload.
+    if (selected) {
+      selected = state.participants.find(p => p.id === selected.id) || selected;
+    }
+
     setCacheStatus(res, ttfb, { kb: txt.length / 1024, parseMs });
 
     render();

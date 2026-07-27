@@ -6,6 +6,8 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Entries 
 
 ## [Unreleased]
 
+## 65f4145 — Fix stale detail panel, refresher-killing panic, ignored warm-slug var
+
 ### Fixed
 - **Detail panel showed data frozen at click time.** `load()` replaced `state` wholesale every poll but never re-resolved `selected`, so `renderDetail` kept rendering the participant object captured when the user clicked — distance, speed, rank, battery and status never updated, while the leaderboard row beside it did. `selected` is now re-resolved against the fresh payload by id, falling back to the previous object if the rider left the payload. Verified with an injected payload: with the fix the panel tracks a +100 km and +250 km bump; without it the panel stays behind while the row moves.
 - **A non-ASCII upstream error body permanently froze an event.** `fetch_raw` and `fetch_tracks_paginated` truncated error bodies with `&text[..text.len().min(200)]`, which panics when byte 200 lands inside a multi-byte sequence — one accent or em-dash in a CDN error page is enough. The panic aborted the spawned refresher, so that slug's snapshot stopped updating for the life of the process with nothing logged. Replaced with a char-boundary-safe `truncate_chars` helper, covered by the project's first unit tests.

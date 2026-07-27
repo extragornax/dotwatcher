@@ -5,6 +5,7 @@ use std::{
     net::SocketAddr,
     path::{Path as FsPath, PathBuf},
     sync::Arc,
+    sync::OnceLock,
     sync::atomic::{AtomicU64, Ordering},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -1391,7 +1392,62 @@ fn resize_to_webp(raw: &[u8], max_w: u32) -> Result<Vec<u8>> {
     Ok(buf.into_inner())
 }
 
-async fn index() -> impl IntoResponse {
+/// The single-page UI, pre-compressed once at startup. The source is a
+/// compile-time constant, so the bodies and the ETag never change for the
+/// lifetime of the process — worth spending max compression effort on.
+struct StaticAsset {
+    body: Bytes,
+    body_br: Bytes,
+    body_gz: Bytes,
+    etag: String,
+}
+
+static INDEX_ASSET: OnceLock<StaticAsset> = OnceLock::new();
+
+fn index_asset() -> &'static StaticAsset {
+    INDEX_ASSET.get_or_init(|| {
+        use std::io::Write;
+        let raw = include_str!("index.html").as_bytes();
+
+        let mut br = Vec::with_capacity(raw.len() / 4);
+        {
+            let mut w = brotli::CompressorWriter::new(&mut br, 65536, 11, 22);
+            let _ = w.write_all(raw);
+        }
+        let mut gz = Vec::with_capacity(raw.len() / 3);
+        {
+            let mut w = flate2::write::GzEncoder::new(&mut gz, flate2::Compression::best());
+            let _ = w.write_all(raw);
+            let _ = w.finish();
+        }
+
+        StaticAsset {
+            body: Bytes::from_static(raw),
+            body_br: Bytes::from(br),
+            body_gz: Bytes::from(gz),
+            etag: format!("\"{:x}\"", fnv1a(raw)),
+        }
+    })
+}
+
+async fn index(headers: HeaderMap) -> Response {
+    let asset = index_asset();
+
+    if headers
+        .get(header::IF_NONE_MATCH)
+        .and_then(|v| v.to_str().ok())
+        == Some(asset.etag.as_str())
+    {
+        let mut h = HeaderMap::new();
+        h.insert(header::ETAG, HeaderValue::from_str(&asset.etag).unwrap());
+        return (StatusCode::NOT_MODIFIED, h).into_response();
+    }
+
+    let accept_enc = headers
+        .get(header::ACCEPT_ENCODING)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
     let mut h = HeaderMap::new();
     h.insert(
         header::CONTENT_TYPE,
@@ -1401,7 +1457,20 @@ async fn index() -> impl IntoResponse {
         header::CACHE_CONTROL,
         HeaderValue::from_static("public, max-age=60"),
     );
-    (StatusCode::OK, h, include_str!("index.html"))
+    h.insert(header::ETAG, HeaderValue::from_str(&asset.etag).unwrap());
+    h.insert(header::VARY, HeaderValue::from_static("Accept-Encoding"));
+
+    let body = if accept_enc.contains("br") {
+        h.insert(header::CONTENT_ENCODING, HeaderValue::from_static("br"));
+        asset.body_br.clone()
+    } else if accept_enc.contains("gzip") {
+        h.insert(header::CONTENT_ENCODING, HeaderValue::from_static("gzip"));
+        asset.body_gz.clone()
+    } else {
+        asset.body.clone()
+    };
+
+    (StatusCode::OK, h, body).into_response()
 }
 
 #[tokio::main]
@@ -1440,6 +1509,17 @@ async fn main() -> Result<()> {
         cache_dir: cache_dir.clone(),
         metrics: metrics.clone(),
     });
+
+    // Compress the UI up front; brotli-11 on ~158 KB is too slow to pay on a request.
+    {
+        let a = index_asset();
+        info!(
+            raw = a.body.len(),
+            br = a.body_br.len(),
+            gz = a.body_gz.len(),
+            "index.html pre-compressed"
+        );
+    }
 
     restore_from_disk(&state).await;
 

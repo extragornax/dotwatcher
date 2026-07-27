@@ -6,6 +6,9 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Entries 
 
 ## [Unreleased]
 
+### Added
+- **Pre-compressed, revalidatable `index.html`.** The UI was served raw on every request — 162 KB with no `Content-Encoding` and no `ETag`, on both `/` and `/event/{slug}`. Since the HTML is a compile-time constant, it is now compressed once at startup into a `OnceLock` (brotli q11 / gzip best) with an FNV-1a `ETag`, and served through the same `Accept-Encoding` negotiation the JSON snapshots use, with `If-None-Match` → 304. Measured: **162,533 B → 34,007 B brotli (−79 %)**, 40,785 B gzip. Compression is warmed during boot so no request pays brotli-11.
+
 ## bfd7380 — Add km/laps unit toggle and distance sorting to leaderboard
 
 ### Added

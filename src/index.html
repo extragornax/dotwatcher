@@ -1622,7 +1622,8 @@ if (location.hostname === 'madcap.extragornax.fr') {
 
   function cactusIcon() {
     const cp = computeCactusPath();
-    return cp && cp.logoUrl ? `<img src="${cp.logoUrl}" alt="pacer">` : '🌵';
+    const url = cp && safeUrl(cp.logoUrl);
+    return url ? `<img src="${escape(url)}" alt="pacer">` : '🌵';
   }
 
   function renderCactus() {
@@ -3186,6 +3187,18 @@ if (location.hostname === 'madcap.extragornax.fr') {
 
   function escape(s) {
     return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  // API-supplied URLs are only safe to put in markup if they are http(s).
+  // Returns the normalized URL, or null for javascript:/data:/malformed values.
+  function safeUrl(u) {
+    if (!u) return null;
+    try {
+      const parsed = new URL(u, location.href);
+      return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.href : null;
+    } catch {
+      return null;
+    }
   }
 
   {

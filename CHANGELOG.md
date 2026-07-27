@@ -6,6 +6,10 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Entries 
 
 ## [Unreleased]
 
+### Fixed
+- **XSS via the pacer logo URL.** `cactusIcon()` interpolated `logoUrl` — sourced from `snail.logo_url` in the geo API — straight into the `L.divIcon` HTML with no escaping, so a value like `x" onerror="…` broke out of the `src` attribute and executed. URLs from the API now pass through a new `safeUrl()` helper that resolves and normalizes them and accepts only `http:`/`https:`, and the result is escaped before interpolation. `javascript:` and `data:` URLs fall back to the 🌵 glyph.
+- **Prometheus was published on every interface.** `docker-compose.yml` mapped `"${PROMETHEUS_PORT:-9090}:9090"`, which Docker binds to `0.0.0.0` and which punches through the host firewall — contradicting both `README.md` and the comment directly above the mapping. Now bound to `127.0.0.1`.
+
 ## 6a3923c — Skip re-render when a poll returns an unchanged snapshot
 
 ### Changed

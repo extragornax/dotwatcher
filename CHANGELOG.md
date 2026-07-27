@@ -6,6 +6,10 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Entries 
 
 ## [Unreleased]
 
+### Added
+- **km / laps unit toggle on lap events.** Events whose `info.ranking_type` is `ranked_by_laps` now get a `km | laps` pill pair above the leaderboard search box. Lap length is taken from the advertised `info.distance` string — `"3.56km x 24h"`, `"?x5.25km"`, `"5.2km x 94"`, `"6,7k per Round"` all parse — and falls back to the measured length of the main route loop when the string carries no usable number. The measured loop also vetoes an advertised figure more than 50 % away from it, so a string holding the total distance rather than one lap can't produce a bogus lap count. Rider distance in the leaderboard row and the map popup follows the selected unit; every other km readout (pacer delta, to-next-CP, elevation profile) is unchanged. Non-lap events never show the toggle and always display km.
+- **Sort leaderboard by distance.** `rank | km ↓ | km ↑` pills in the same bar (labels read `laps ↓` / `laps ↑` when the lap unit is active — km and laps are the same underlying value, so one sort serves both). Default stays `rank`, favorites stay pinned to the top in every mode, riders with no distance sort last, and rank remains the tiebreaker. Both controls persist in the URL as `?sort=asc|desc` and `?unit=laps`.
+
 ## db9b6dd — Add Tally analytics pixel for dotwatcher site
 
 ### Added

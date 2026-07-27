@@ -124,6 +124,9 @@
   .searchbar input[type=search] { flex: 1; }
   .catbar { padding: 0 18px 10px; display: flex; gap: 4px; flex-wrap: wrap; }
   .catbar .pill { font-size: 11px; padding: 3px 10px; }
+  .sortbar { padding: 0 18px 10px; display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+  .sortbar .pill { font-size: 11px; padding: 3px 10px; }
+  .sortbar .sep { width: 1px; align-self: stretch; background: var(--border); margin: 0 4px; }
   .err { color: var(--bad); padding: 14px; }
   a { color: var(--accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
@@ -333,6 +336,7 @@ if (location.hostname === 'madcap.extragornax.fr') {
   <aside id="sidebar">
     <h2>Leaderboard</h2>
     <div class="catbar" id="catbar"></div>
+    <div class="sortbar" id="sortbar"></div>
     <div class="searchbar">
       <input id="q" type="search" placeholder="search name / bib…" />
       <button id="favonly" class="fav-toggle" type="button" title="show favorites only" aria-pressed="false">★</button>
@@ -447,6 +451,8 @@ if (location.hostname === 'madcap.extragornax.fr') {
   let favs = loadFavs();
   let favOnly = false;
   let catFilter = null;
+  let distUnit = 'km';    // 'km' | 'laps' — 'laps' only offered on lap-ranked events
+  let sortMode = 'rank';  // 'rank' | 'asc' | 'desc' (by distance)
 
   function imgProxy(url, w) {
     if (!url || !url.startsWith('https://storage.googleapis.com/')) return url;
@@ -755,11 +761,14 @@ if (location.hostname === 'madcap.extragornax.fr') {
   function readUrlState() {
     const params = new URLSearchParams(location.search);
     const tab = params.get('tab');
+    const sort = params.get('sort');
     return {
       tab: tab === 'map' || tab === 'feed' ? tab : null,
       pid: params.get('p') || null,
       cat: params.get('cat') || null,
       favOnly: params.get('fav') === '1',
+      sort: sort === 'asc' || sort === 'desc' ? sort : 'rank',
+      unit: params.get('unit') === 'laps' ? 'laps' : 'km',
     };
   }
 
@@ -770,6 +779,8 @@ if (location.hostname === 'madcap.extragornax.fr') {
     if (selected) params.set('p', selected.id);
     if (catFilter) params.set('cat', catFilter);
     if (favOnly) params.set('fav', '1');
+    if (sortMode !== 'rank') params.set('sort', sortMode);
+    if (distUnit !== 'km') params.set('unit', distUnit);
     const qs = params.toString();
     const target = location.pathname + (qs ? '?' + qs : '');
     if (location.pathname + location.search !== target) {
@@ -794,6 +805,32 @@ if (location.hostname === 'madcap.extragornax.fr') {
     return (+n).toFixed(1) + ' km';
   };
   const fmtKmh = (v) => (v == null ? '—' : (+v).toFixed(1) + ' km/h');
+
+  const isLapEvent = () => !!(state && state.info && state.info.ranking_type === 'ranked_by_laps');
+
+  // Lap length for lap-ranked events: prefer the advertised figure ("3.56km x 24h",
+  // "?x5.25km", "6,7k per Round"), fall back to the measured length of the main route
+  // loop. The route also vetoes an advertised number that is clearly the total distance
+  // rather than one lap.
+  function lapLengthKm() {
+    const ri = getRouteIndex();
+    const routeKm = ri && ri.total > 0 ? ri.total : null;
+    const raw = state && state.info && state.info.distance;
+    const m = raw && String(raw).match(/(\d+(?:[.,]\d+)?)\s*k/i);
+    const advertised = m ? parseFloat(m[1].replace(',', '.')) : NaN;
+    if (advertised > 0 && (!routeKm || Math.abs(advertised - routeKm) / routeKm < 0.5)) return advertised;
+    return routeKm;
+  }
+
+  // Rider distance in the unit the user picked: km, or laps on a lap-ranked event.
+  function fmtDist(m) {
+    const n = (m && typeof m === 'object') ? m.distance : m;
+    if (n == null || isNaN(+n)) return '—';
+    if (distUnit !== 'laps' || !isLapEvent()) return fmtKm(n);
+    const lap = lapLengthKm();
+    if (!lap) return fmtKm(n);
+    return (+n / lap).toFixed(1) + ' laps';
+  }
   const isOrga = (p) => !!(p && p.attributes && p.attributes.orga === '1');
   const orgaBadge = (p) => isOrga(p) ? ' <span class="badge-orga" title="event organizer / staff">staff</span>' : '';
   const fmtTime = (iso) => {
@@ -2093,7 +2130,7 @@ if (location.hostname === 'madcap.extragornax.fr') {
     return `
       <div><b>#${p.overall_rank ?? '-'}</b> ${escape(p.first_name || '')} ${escape(p.last_name || '')}${orgaBadge(p)} <button class="star ${isFav ? 'on' : ''}" data-action="fav" data-id="${escape(p.id)}" title="favorite" aria-pressed="${isFav}">★</button></div>
       <div style="color:var(--mute);font-size:12px;margin-top:2px">bib ${escape(p.bib || '-')} · ${escape((p.attributes && p.attributes.category) || '')}</div>
-      <div style="margin-top:6px"><b>${fmtKm(p.distance)}</b> @ ${fmtKmh(p.speed)}</div>
+      <div style="margin-top:6px"><b>${fmtDist(p.distance)}</b> @ ${fmtKmh(p.speed)}</div>
       <div style="color:var(--mute);font-size:12px">to next CP: ${fmtKm(p.distance_to_next_cp)}</div>
       <div style="color:var(--mute);font-size:12px">last ping: ${when}${p.sleeping ? ' · zZz' : ''}${p.battery != null ? ' · ' + p.battery + '%' : ''}</div>
       <div class="popup-actions"><button data-action="detail" data-id="${escape(p.id)}">open details →</button>${sv}</div>
@@ -2358,6 +2395,13 @@ if (location.hostname === 'madcap.extragornax.fr') {
       const fa = favs.has(a.id) ? 0 : 1;
       const fb = favs.has(b.id) ? 0 : 1;
       if (fa !== fb) return fa - fb;
+      if (sortMode !== 'rank') {
+        // km and laps are the same underlying value, so one distance sort covers both.
+        const da = a.distance, db = b.distance;
+        const na = da == null || isNaN(+da), nb = db == null || isNaN(+db);
+        if (na !== nb) return na ? 1 : -1;  // riders without a distance go last
+        if (!na && +da !== +db) return sortMode === 'asc' ? +da - +db : +db - +da;
+      }
       return (a[rankKey] ?? 1e9) - (b[rankKey] ?? 1e9);
     });
     if (!q) return list;
@@ -2383,8 +2427,26 @@ if (location.hostname === 'madcap.extragornax.fr') {
     bar.innerHTML = pills.join('');
   }
 
+  function renderSortBar() {
+    const bar = document.getElementById('sortbar');
+    if (!bar || !state) return;
+    const laps = isLapEvent() && lapLengthKm() > 0;
+    const unit = laps && distUnit === 'laps' ? 'laps' : 'km';
+    const pills = [];
+    if (laps) {
+      pills.push(`<button class="pill${distUnit === 'km' ? ' active' : ''}" data-unit="km">km</button>`);
+      pills.push(`<button class="pill${distUnit === 'laps' ? ' active' : ''}" data-unit="laps">laps</button>`);
+      pills.push('<span class="sep"></span>');
+    }
+    pills.push(`<button class="pill${sortMode === 'rank' ? ' active' : ''}" data-sort="rank" title="sort by rank">rank</button>`);
+    pills.push(`<button class="pill${sortMode === 'desc' ? ' active' : ''}" data-sort="desc" title="most ${unit} first">${unit} ↓</button>`);
+    pills.push(`<button class="pill${sortMode === 'asc' ? ' active' : ''}" data-sort="asc" title="fewest ${unit} first">${unit} ↑</button>`);
+    bar.innerHTML = pills.join('');
+  }
+
   function renderList() {
     renderCategoryBar();
+    renderSortBar();
     const root = document.getElementById('plist');
     const list = filteredParticipants();
     const cd = cactusAt(currentPlaybackTime());
@@ -2411,7 +2473,7 @@ if (location.hostname === 'madcap.extragornax.fr') {
           <div class="name"><span class="dot ${dotClass}"></span>${escape(p.first_name || '')} ${escape(p.last_name || '')}${escape(nick)}${orgaBadge(p)}</div>
           <div class="meta">bib ${escape(p.bib || '-')} · ${escape((p.attributes && p.attributes.category) || '')} · ${sinceText(p.last_ping)}</div>
         </div>
-        <div class="num"><b>${fmtKm(p.distance)}</b><br/>${fmtKmh(p.speed)}${deltaHtml}</div>
+        <div class="num"><b>${fmtDist(p.distance)}</b><br/>${fmtKmh(p.speed)}${deltaHtml}</div>
         <button class="star ${isFav ? 'on' : ''}" data-action="fav" data-id="${escape(p.id)}" title="favorite" aria-pressed="${isFav}">★</button>
       `;
       div.addEventListener('click', (ev) => {
@@ -3214,6 +3276,15 @@ if (location.hostname === 'madcap.extragornax.fr') {
     renderList();
     writeUrlState();
   });
+  document.getElementById('sortbar').addEventListener('click', (ev) => {
+    const b = ev.target.closest('.pill[data-unit],.pill[data-sort]');
+    if (!b) return;
+    if (b.dataset.unit) distUnit = b.dataset.unit;
+    else sortMode = b.dataset.sort;
+    renderList();
+    if (b.dataset.unit && map) renderMap();  // popups carry the distance too
+    writeUrlState();
+  });
   document.getElementById('favonly').addEventListener('click', () => setFavOnly(!favOnly));
   document.getElementById('map-favonly').addEventListener('click', () => setFavOnly(!favOnly));
   document.getElementById('map-traces').addEventListener('click', () => setShowTraces(!showTraces));
@@ -3372,6 +3443,8 @@ if (location.hostname === 'madcap.extragornax.fr') {
     const urlState = readUrlState();
     catFilter = urlState.cat;
     favOnly = urlState.favOnly;
+    sortMode = urlState.sort;
+    distUnit = urlState.unit;
     ['favonly', 'map-favonly'].forEach(id => {
       const b = document.getElementById(id);
       if (b) { b.classList.toggle('on', favOnly); b.setAttribute('aria-pressed', favOnly); }

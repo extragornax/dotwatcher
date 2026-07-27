@@ -6,6 +6,9 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Entries 
 
 ## [Unreleased]
 
+### Changed
+- **The map pipeline no longer runs while the map is off screen.** `render()` called `renderMap()` whenever a map existed, so once the user had opened the Map tab even once, every subsequent poll re-ran traces, journal pins, the night shade, the wind overlay, the pacer and the elevation banner — all of it invisible from the List or Feed tab. Now gated on `currentTab === 'map'`; `setTab` already re-renders on the way back in, so nothing can go stale. Verified by dropping riders from the payload while on the List tab: the map's own counter stayed frozen through the poll and caught up on tab switch.
+
 ## 65f4145 — Fix stale detail panel, refresher-killing panic, ignored warm-slug var
 
 ### Fixed

@@ -928,7 +928,10 @@ if (location.hostname === 'madcap.extragornax.fr') {
     renderList();
     if (selected) renderDetail(selected);
     else renderOverview();
-    if (map) renderMap();
+    // Only worth paying for while the map is on screen: renderMap drives traces,
+    // journal pins, the night shade, the wind overlay, the pacer and the elevation
+    // banner. setTab re-renders on the way back in, so nothing goes stale.
+    if (map && currentTab === 'map') renderMap();
     if (currentTab === 'feed') renderFeed();
     refreshElapsed();
     writeUrlState();

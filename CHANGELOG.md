@@ -6,6 +6,9 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Entries 
 
 ## [Unreleased]
 
+### Added
+- **Rider counts on the leaderboard category pills.** Each category filter now carries a dimmed count of how many riders are in it — `Solo H 109`, `Solo F/MdG 23`, `Équipe de 2 21` — with `All` showing the field size. Counted in a single pass over `participants` keyed on `attributes.category`, the same field the pills were already derived from. `All` counts everyone including riders with no category, so it can exceed the sum of the individual pills. Verified against `24h-longchamp-26`: every badge matches the row count its filter produces.
+
 ## fd3361e — Only render the map while the map tab is on screen
 
 ### Changed

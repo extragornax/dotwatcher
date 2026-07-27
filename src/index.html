@@ -124,6 +124,7 @@
   .searchbar input[type=search] { flex: 1; }
   .catbar { padding: 0 18px 10px; display: flex; gap: 4px; flex-wrap: wrap; }
   .catbar .pill { font-size: 11px; padding: 3px 10px; }
+  .pill-n { margin-left: 5px; opacity: 0.55; font-variant-numeric: tabular-nums; }
   .sortbar { padding: 0 18px 10px; display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
   .sortbar .pill { font-size: 11px; padding: 3px 10px; }
   .sortbar .sep { width: 1px; align-self: stretch; background: var(--border); margin: 0 4px; }
@@ -2449,13 +2450,19 @@ if (location.hostname === 'madcap.extragornax.fr') {
   function renderCategoryBar() {
     const bar = document.getElementById('catbar');
     if (!bar || !state) return;
-    const cats = [...new Set(state.participants
-      .map(p => (p.attributes && p.attributes.category) || '')
-      .filter(Boolean))].sort();
+    const counts = new Map();
+    for (const p of state.participants) {
+      const c = (p.attributes && p.attributes.category) || '';
+      if (c) counts.set(c, (counts.get(c) || 0) + 1);
+    }
+    const cats = [...counts.keys()].sort();
     if (cats.length < 2) { bar.innerHTML = ''; return; }
-    const pills = [`<button class="pill${catFilter == null ? ' active' : ''}" data-cat="">All</button>`];
+    // "All" counts everyone, including riders with no category at all, so it can
+    // exceed the sum of the per-category pills.
+    const n = (v) => `<span class="pill-n">${v}</span>`;
+    const pills = [`<button class="pill${catFilter == null ? ' active' : ''}" data-cat="">All${n(state.participants.length)}</button>`];
     for (const c of cats) {
-      pills.push(`<button class="pill${catFilter === c ? ' active' : ''}" data-cat="${escape(c)}">${escape(c)}</button>`);
+      pills.push(`<button class="pill${catFilter === c ? ' active' : ''}" data-cat="${escape(c)}">${escape(c)}${n(counts.get(c))}</button>`);
     }
     bar.innerHTML = pills.join('');
   }

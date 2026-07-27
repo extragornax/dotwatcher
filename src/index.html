@@ -453,6 +453,7 @@ if (location.hostname === 'madcap.extragornax.fr') {
   let catFilter = null;
   let distUnit = 'km';    // 'km' | 'laps' — 'laps' only offered on lap-ranked events
   let sortMode = 'rank';  // 'rank' | 'asc' | 'desc' (by distance)
+  let lastEtag = null;    // snapshot ETag of the payload currently in `state`
 
   function imgProxy(url, w) {
     if (!url || !url.startsWith('https://storage.googleapis.com/')) return url;
@@ -873,13 +874,37 @@ if (location.hostname === 'madcap.extragornax.fr') {
       document.getElementById('body').innerHTML = `<div class="err">upstream error: ${res.status}</div>`;
       return;
     }
+    // The snapshot only changes when the server refreshes upstream (30 s), and a poll
+    // can also land on an unchanged body after a retry or a browser cache hit.
+    // Re-parsing and re-rendering an identical payload throws away every
+    // identity-keyed memo, resets the detail panel's scroll position and snaps the
+    // profile cursor back — so when the ETag matches, refresh the status line only.
+    const etag = res.headers.get('etag');
+    if (etag && etag === lastEtag && state) {
+      setCacheStatus(res, ttfb, null);
+      return;
+    }
+
     const txt = await res.text();
     const t1 = performance.now();
     state = JSON.parse(txt);
     const parseMs = performance.now() - t1;
+    lastEtag = etag;
 
+    setCacheStatus(res, ttfb, { kb: txt.length / 1024, parseMs });
+
+    render();
+    loadOvertakes();
+    runNotificationChecks();
+  }
+
+  // `payload` is null when the poll returned an unchanged snapshot.
+  function setCacheStatus(res, ttfb, payload) {
     const perf = document.getElementById('perf');
-    perf.innerHTML = `ttfb <b>${ttfb.toFixed(0)} ms</b> · payload <b>${(txt.length / 1024).toFixed(0)} KB</b> · parse <b>${parseMs.toFixed(0)} ms</b> · upstream-ms <b>${res.headers.get('x-upstream-ms') || '?'}</b> · cache-age <b>${res.headers.get('x-cache-age-ms') || '?'} ms</b>`;
+    const body = payload
+      ? `payload <b>${payload.kb.toFixed(0)} KB</b> · parse <b>${payload.parseMs.toFixed(0)} ms</b>`
+      : 'payload <b>unchanged</b>';
+    perf.innerHTML = `ttfb <b>${ttfb.toFixed(0)} ms</b> · ${body} · upstream-ms <b>${res.headers.get('x-upstream-ms') || '?'}</b> · cache-age <b>${res.headers.get('x-cache-age-ms') || '?'} ms</b>`;
     const statusEl = document.getElementById('status');
     if (res.headers.get('x-cache-stale') === '1') {
       statusEl.className = 'badge stale';
@@ -888,10 +913,6 @@ if (location.hostname === 'madcap.extragornax.fr') {
       statusEl.className = 'badge live';
       statusEl.textContent = 'live';
     }
-
-    render();
-    loadOvertakes();
-    runNotificationChecks();
   }
 
   function render() {

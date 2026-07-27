@@ -6,6 +6,9 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/). Entries 
 
 ## [Unreleased]
 
+### Changed
+- **Skip the re-render when a poll returns an unchanged snapshot.** The 30 s poll parsed and re-rendered the full payload unconditionally, even when the body was byte-identical. Because `state = JSON.parse(txt)` replaces the object graph wholesale and four caches (`courseProfileCache`, `topSpeedsCache`, `kmMarkersCache`, `routeIndex`) key on object *identity*, every one of them missed on every poll. `load()` now compares the response `ETag` against the payload currently in `state`; on a match it refreshes the cache-age/stale line (showing `payload unchanged`) and returns without parsing, rendering, reloading overtakes, or re-running notification checks. Measured on a live 117-rider event: unchanged polls cost ~2 ms instead of a 4.5 MB parse (22–44 ms) plus a full re-render; changed polls render exactly as before.
+
 ## ba2e2d2 — Pre-compress and revalidate index.html
 
 ### Added
